@@ -45,6 +45,7 @@ import ProfileSelector from './components/ProfileSelector';
 import AuthTab from './components/AuthTab';
 import PresentationLanding from './components/PresentationLanding';
 import LanguageSelector from './components/LanguageSelector';
+import EcoIaTab from './components/EcoIaTab';
 import { useLanguage } from './translations';
 
 
@@ -71,7 +72,8 @@ import {
   Download,
   Monitor,
   Bell,
-  Hammer
+  Hammer,
+  Sparkles
 } from 'lucide-react';
 
 const TIPS = [
@@ -87,7 +89,7 @@ export default function App() {
   const { t, tText } = useLanguage();
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth' | 'notifications'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth' | 'notifications' | 'eco_ia'>('dashboard');
 
   // Core States
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -1009,6 +1011,7 @@ export default function App() {
               { id: 'transactions', name: t.navTransactions, icon: ArrowRightLeft },
               { id: 'bills', name: t.navBills, icon: CalendarCheck2 },
               { id: 'investments', name: t.navInvestments, icon: TrendingUp },
+              { id: 'eco_ia', name: 'ECO IA Finantra', icon: Sparkles },
               { id: 'notifications', name: tText('Notificações'), icon: Bell },
               { id: 'auth', name: loggedInUser ? t.navAuth : (t.language === 'pt-BR' ? 'Acesso & Login' : (t.language === 'es' ? 'Acceso e Inicio' : 'Access & Login')), icon: LogIn },
               { id: 'config', name: t.navConfig, icon: Settings }
@@ -1134,6 +1137,27 @@ export default function App() {
                 onAddInvestment={handleAddInvestment}
                 onUpdateInvestmentValue={handleUpdateInvestmentValue}
                 onDeleteInvestment={handleDeleteInvestment}
+                currency={preferences.currency}
+              />
+            </div>
+          )}
+
+          {/* ECO IA FINANTRA Tab */}
+          {activeTab === 'eco_ia' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-950 tracking-tight">{tText("ECO IA FINANTRA")}</h2>
+                <p className="text-xs text-gray-500">{tText("Fale com a nossa assistente virtual de inteligência financeira para agendar novos ganhos, gastos, faturas de contas mensais e investimentos, ou tirar dúvidas.")}</p>
+              </div>
+
+              <EcoIaTab
+                onAddTransaction={handleAddTransaction}
+                onAddBill={handleAddBill}
+                onAddInvestment={handleAddInvestment}
+                transactions={transactions}
+                monthlyBills={monthlyBills}
+                onDeleteTransaction={handleDeleteTransaction}
+                onToggleBillStatus={handleToggleBillStatus}
                 currency={preferences.currency}
               />
             </div>

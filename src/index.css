@@ -256,4 +256,28 @@ body.dark .recharts-legend-item-text {
   color: #E2E8F0 !important;
 }
 
+/* Esconde o widget flutuante de chat (Chatwoot, Noupe, etc.) para manter apenas a aba ECO IA FINANTRA */
+#chatwoot-widget-container,
+.woot-widget-bubble,
+.woot-widget-holder,
+.woot--bubble-holder,
+.woot-elements--left,
+.woot-elements--right,
+[class*="woot-widget"],
+[id*="chatwoot-widget"],
+iframe[src*="chatwoot"],
+iframe[src*="noupe"],
+iframe[title*="Chat"],
+div[id*="chatwoot"],
+div[class*="chatwoot"],
+div[id*="noupe"],
+div[class*="noupe"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 
