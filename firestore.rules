@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Catch-all Default-Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common security validators
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Type and Attribute validators to prevent poisoning or injection attacks
+    function isValidTransaction(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.type is string && (data.type == 'earnings' || data.type == 'expenses')
+        && data.description is string && data.description.size() <= 200
+        && data.amount is number && data.amount >= 0
+        && data.category is string && data.category.size() <= 100
+        && data.date is string && data.date.size() <= 50
+        && data.profileId is string && data.profileId.size() <= 128
+        && data.userId is string;
+    }
+
+    function isValidMonthlyBill(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.description is string && data.description.size() <= 200
+        && data.amount is number && data.amount >= 0
+        && data.dueDate is string && data.dueDate.size() <= 100
+        && data.category is string && data.category.size() <= 100
+        && data.isPaid is bool
+        && data.profileId is string && data.profileId.size() <= 128
+        && data.userId is string;
+    }
+
+    function isValidInvestment(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.type is string && (data.type == 'Renda Fixa' || data.type == 'Ações' || data.type == 'Fundos Imobiliários' || data.type == 'Cripto' || data.type == 'Outros')
+        && data.amountInvested is number && data.amountInvested >= 0
+        && data.currentAmount is number && data.currentAmount >= 0
+        && data.acquisitionDate is string && data.acquisitionDate.size() <= 50
+        && data.broker is string && data.broker.size() <= 200
+        && data.profileId is string && data.profileId.size() <= 128
+        && data.userId is string;
+    }
+
+    function isValidUser(data) {
+      return data.email is string && data.email.size() <= 150
+        && data.passwordHash is string && data.passwordHash.size() <= 150
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && data.username is string && data.username.size() <= 100;
+    }
+
+    // Rules for individual resource domains (Transactions, Bills, Investments, Users)
+
+    match /users/{userId} {
+      allow get, list, delete: if true;
+      allow create, update: if isValidId(userId) && isValidUser(request.resource.data);
+    }
+
+    match /transactions/{transactionId} {
+      allow get, list, delete: if true;
+      allow create, update: if isValidId(transactionId) && isValidTransaction(request.resource.data);
+    }
+
+    match /monthly_bills/{billId} {
+      allow get, list, delete: if true;
+      allow create, update: if isValidId(billId) && isValidMonthlyBill(request.resource.data);
+    }
+
+    match /investments/{investmentId} {
+      allow get, list, delete: if true;
+      allow create, update: if isValidId(investmentId) && isValidInvestment(request.resource.data);
+    }
+  }
+}
