@@ -876,6 +876,41 @@ export async function deleteInvestmentFromDb(id: string): Promise<boolean> {
   }
 }
 
+export async function fetchMaintenanceNotifications(): Promise<any[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('app_maintenance')
+      .select('*');
+    
+    if (error) {
+      console.warn('Supabase fetchMaintenanceNotifications error:', error);
+      return null;
+    }
+    
+    if (data) {
+      return data.map((item: any) => {
+        const createdAtTime = new Date(item.created_at || Date.now()).getTime();
+        const durationMs = (item.duration_hours || 2) * 60 * 60 * 1000;
+        const expiryTime = createdAtTime + durationMs;
+        
+        return {
+          id: `supabase_maint_${item.id}`,
+          type: 'maintenance',
+          title: item.title,
+          description: item.description,
+          timestamp: item.created_at || new Date().toISOString(),
+          isRead: false,
+          isMaintenance: true,
+          expiryTime: expiryTime
+        };
+      });
+    }
+  } catch (err) {
+    console.warn('Supabase fetchMaintenanceNotifications exception:', err);
+  }
+  return null;
+}
+
 export interface MigrationSummary {
   usersCount: number;
   transactionsCount: number;

@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
+import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../translations';
 import { Transaction, TransactionType } from '../types';
 import {
@@ -93,6 +95,184 @@ export default function TransactionsTab({
     setShowAddForm(false);
   };
 
+  // Generate a visual PDF statement of the current movements
+  const handleExportPDF = () => {
+    const doc = new jsPDF();
+    
+    // Primary Slate colors for styling
+    const primaryColor = [15, 23, 42]; // #0F172A
+    const secondaryColor = [71, 85, 105]; // #475569
+    const lightBg = [248, 250, 252]; // #F8FAFC
+    const borderGray = [226, 232, 240]; // #E2E8F0
+    const textDark = [30, 41, 59]; // #1E293B
+    const textMuted = [100, 116, 139]; // #64748B
+    
+    // Add custom header banner
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    // App Brand Title
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.text('FINANTRA', 15, 18);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(203, 213, 225);
+    doc.text('Sistema Personalizado de Controle Manual de Gastos e Ativos', 15, 24);
+    doc.text(`Emitido em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR').slice(0, 5)}`, 15, 30);
+    
+    // Document Subtitle
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text('EXTRATO VISUAL DE MOVIMENTAÇÕES FINANCEIRAS', 15, 52);
+    
+    // Draw fine dividing line
+    doc.setDrawColor(borderGray[0], borderGray[1], borderGray[2]);
+    doc.setLineWidth(0.5);
+    doc.line(15, 56, 195, 56);
+    
+    // Calculate summary stats for the PDF header
+    const earnings = filteredList.filter(t => t.type === 'earnings').reduce((sum, t) => sum + t.amount, 0);
+    const expenses = filteredList.filter(t => t.type === 'expenses').reduce((sum, t) => sum + t.amount, 0);
+    const netBalance = earnings - expenses;
+    
+    // Render Stats Cards in PDF
+    // Card 1: Ganhos
+    doc.setFillColor(240, 253, 250); // Light emerald
+    doc.roundedRect(15, 62, 55, 22, 2, 2, 'F');
+    doc.setTextColor(5, 150, 105); // Emerald 600
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('TOTAL DE ENTRADAS', 18, 68);
+    doc.setFontSize(11);
+    doc.text(formatCurrency(earnings, currency), 18, 77);
+    
+    // Card 2: Saídas
+    doc.setFillColor(254, 242, 242); // Light rose
+    doc.roundedRect(77, 62, 55, 22, 2, 2, 'F');
+    doc.setTextColor(220, 38, 38); // Rose 600
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('TOTAL DE SAÍDAS', 80, 68);
+    doc.setFontSize(11);
+    doc.text(formatCurrency(expenses, currency), 80, 77);
+    
+    // Card 3: Saldo
+    doc.setFillColor(lightBg[0], lightBg[1], lightBg[2]);
+    doc.roundedRect(140, 62, 55, 22, 2, 2, 'F');
+    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.text('SALDO ACUMULADO', 143, 68);
+    doc.setFontSize(11);
+    if (netBalance >= 0) {
+      doc.setTextColor(16, 185, 129); // Emerald 500
+    } else {
+      doc.setTextColor(239, 68, 68); // Rose 500
+    }
+    doc.text(formatCurrency(netBalance, currency), 143, 77);
+    
+    // Table Header
+    doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.rect(15, 92, 180, 8, 'F');
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.text('Data', 18, 97.5);
+    doc.text('Descrição / Lançamento', 38, 97.5);
+    doc.text('Categoria', 105, 97.5);
+    doc.text('Método', 145, 97.5);
+    doc.text('Valor', 192, 97.5, { align: 'right' });
+    
+    let y = 105;
+    const pageHeight = 297;
+    
+    // Reset font for data rows
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    
+    filteredList.forEach((t, index) => {
+      // Alternating row background
+      if (index % 2 === 0) {
+        doc.setFillColor(252, 253, 254);
+        doc.rect(15, y - 4, 180, 7.5, 'F');
+      }
+      
+      // Draw bottom border for rows
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.2);
+      doc.line(15, y + 3.5, 195, y + 3.5);
+      
+      doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+      doc.text(formatDate(t.date), 18, y);
+      
+      // Handle potential description overflow
+      const desc = t.description.length > 35 ? t.description.substring(0, 32) + '...' : t.description;
+      doc.text(desc, 38, y);
+      
+      doc.text(tText(t.category), 105, y);
+      doc.text(tText(t.paymentMethod), 145, y);
+      
+      if (t.type === 'earnings') {
+        doc.setTextColor(5, 150, 105); // Emerald 600
+        doc.text(`+ ${formatCurrency(t.amount, currency)}`, 192, y, { align: 'right' });
+      } else {
+        doc.setTextColor(220, 38, 38); // Rose 600
+        doc.text(`- ${formatCurrency(t.amount, currency)}`, 192, y, { align: 'right' });
+      }
+      
+      y += 7.5;
+      
+      // Check for page overflow
+      if (y > pageHeight - 20) {
+        // Footer on the current page before adding a new page
+        doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+        doc.setFontSize(7);
+        doc.text('Finantra - Finanças sob seu controle absoluto e com total privacidade.', 15, pageHeight - 10);
+        doc.text(`Página ${doc.getNumberOfPages()}`, 195, pageHeight - 10, { align: 'right' });
+        
+        doc.addPage();
+        y = 25; // Reset y for new page
+        
+        // Redraw thin header banner on the new page
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(0, 0, 210, 15, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text('FINANTRA - EXTRATO COMPLEMENTAR', 15, 10);
+        
+        // Table Header again on new page
+        doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+        doc.rect(15, 22, 180, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('Data', 18, 27.5);
+        doc.text('Descrição / Lançamento', 38, 27.5);
+        doc.text('Categoria', 105, 27.5);
+        doc.text('Método', 145, 27.5);
+        doc.text('Valor', 192, 27.5, { align: 'right' });
+        
+        y = 35;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+      }
+    });
+    
+    // Add final footer
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.setFontSize(7);
+    doc.text('Finantra - Finanças sob seu controle absoluto e com total privacidade.', 15, pageHeight - 10);
+    doc.text(`Página ${doc.getNumberOfPages()}`, 195, pageHeight - 10, { align: 'right' });
+    
+    doc.save(`extrato_finantra_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   // Categories list based on filter
   const allAvailableCategories = useMemo(() => {
     const list = new Set<string>();
@@ -106,12 +286,14 @@ export default function TransactionsTab({
       .filter((t) => {
         const matchesType = filterType === 'all' || t.type === filterType;
         const matchesQuery = t.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                             (t.notes || '').toLowerCase().includes(searchQuery.toLowerCase());
+                             (t.notes || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             t.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             tText(t.category).toLowerCase().includes(searchQuery.toLowerCase());
         const matchesCategory = selectedCategory === 'all' || t.category === selectedCategory;
         return matchesType && matchesQuery && matchesCategory;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [transactions, filterType, searchQuery, selectedCategory]);
+  }, [transactions, filterType, searchQuery, selectedCategory, tText]);
 
   return (
     <div className="space-y-6">
@@ -174,13 +356,24 @@ export default function TransactionsTab({
             <input
               id="transaction-search-input"
               type="text"
-              placeholder={tText("Buscar por descrição...")}
+              placeholder={tText("Buscar por descrição ou categoria...")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-50 border border-slate-200 text-xs rounded-xl pl-9 pr-4 py-2.5 text-slate-800 outline-none hover:bg-slate-100/70 focus:border-slate-800 focus:bg-white transition-all"
             />
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           </div>
+
+          {/* Export PDF Statement */}
+          <button
+              id="btn-export-pdf"
+              onClick={handleExportPDF}
+              className="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-lg px-4 py-2.5 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-all active:scale-95 shadow-2xs"
+              title={tText("Gerar Extrato em PDF")}
+          >
+            <FileText className="w-4 h-4 text-slate-600" />
+            {tText("Emitir Extrato PDF")}
+          </button>
 
           {/* Quick trigger Add Transaction */}
           <button
@@ -394,7 +587,7 @@ export default function TransactionsTab({
       {/* Transactions Table / List view */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
         <div className="px-6 py-4 border-b border-slate-155 flex items-center justify-between">
-          <h4 className="font-bold text-slate-900 text-sm">{tText("Histórico de Lançamentos")}</h4>
+          <h3 className="font-bold text-slate-900 text-sm">{tText("Histórico de Lançamentos")}</h3>
           <span className="text-xs font-medium text-slate-400 font-mono">
             {tText("Mostrando")} {filteredList.length} {tText("de")} {transactions.length} {tText("registros")}
           </span>
@@ -419,79 +612,88 @@ export default function TransactionsTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {filteredList.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50/40 transition-colors">
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl shrink-0 ${
-                          t.type === 'earnings' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
-                        }`}>
-                          {t.type === 'earnings' ? (
-                            <ArrowUpCircle className="w-4 h-4" />
-                          ) : (
-                            <ArrowDownCircle className="w-4 h-4" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p id={`trans-desc-${t.id}`} className="font-semibold text-gray-900 truncate">{t.description}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
-                              {tText(t.category)}
-                            </span>
-                            {t.notes && (
-                              <span className="text-[10px] text-gray-400 truncate max-w-[150px] italic">
-                                "{t.notes}"
-                              </span>
+                <AnimatePresence initial={false}>
+                  {filteredList.map((t) => (
+                    <motion.tr
+                      key={t.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, x: -15, transition: { duration: 0.15 } }}
+                      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                      className="hover:bg-slate-50/40 transition-colors"
+                    >
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded-xl shrink-0 ${
+                            t.type === 'earnings' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
+                          }`}>
+                            {t.type === 'earnings' ? (
+                              <ArrowUpCircle className="w-4 h-4" />
+                            ) : (
+                              <ArrowDownCircle className="w-4 h-4" />
                             )}
                           </div>
+                          <div className="min-w-0">
+                            <p id={`trans-desc-${t.id}`} className="font-semibold text-gray-900 truncate">{t.description}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
+                                {tText(t.category)}
+                              </span>
+                              {t.notes && (
+                                <span className="text-[10px] text-gray-400 truncate max-w-[150px] italic">
+                                  "{t.notes}"
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-gray-600 font-medium whitespace-nowrap">
-                      {tText(t.paymentMethod)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-500 font-mono whitespace-nowrap">
-                      {formatDate(t.date)}
-                    </td>
-                    <td className="py-4 px-4 text-right font-bold whitespace-nowrap">
-                      <span className={t.type === 'earnings' ? 'text-emerald-600' : 'text-rose-600'}>
-                        {t.type === 'earnings' ? '+' : '-'} {formatCurrency(t.amount, currency)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-center">
-                      {deletingId === t.id ? (
-                        <div className="flex items-center justify-center gap-1.5 animate-fadeIn">
+                      </td>
+                      <td className="py-4 px-4 text-gray-600 font-medium whitespace-nowrap">
+                        {tText(t.paymentMethod)}
+                      </td>
+                      <td className="py-4 px-4 text-gray-500 font-mono whitespace-nowrap">
+                        {formatDate(t.date)}
+                      </td>
+                      <td className="py-4 px-4 text-right font-bold whitespace-nowrap">
+                        <span className={t.type === 'earnings' ? 'text-emerald-600' : 'text-rose-600'}>
+                          {t.type === 'earnings' ? '+' : '-'} {formatCurrency(t.amount, currency)}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-center">
+                        {deletingId === t.id ? (
+                          <div className="flex items-center justify-center gap-1.5 animate-fadeIn">
+                            <button
+                              id={`btn-confirm-delete-${t.id}`}
+                              onClick={() => {
+                                onDeleteTransaction(t.id);
+                                setDeletingId(null);
+                              }}
+                              className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-rose-700 transition-colors cursor-pointer"
+                            >
+                              {tText("Sim")}
+                            </button>
+                            <button
+                              id={`btn-cancel-delete-${t.id}`}
+                              onClick={() => setDeletingId(null)}
+                              className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                            >
+                              {tText("Não")}
+                            </button>
+                          </div>
+                        ) : (
                           <button
-                            id={`btn-confirm-delete-${t.id}`}
-                            onClick={() => {
-                              onDeleteTransaction(t.id);
-                              setDeletingId(null);
-                            }}
-                            className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-rose-700 transition-colors cursor-pointer"
+                            id={`btn-delete-${t.id}`}
+                            onClick={() => setDeletingId(t.id)}
+                            className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 hover:scale-110 active:scale-95 transition-all cursor-pointer outline-none focus:outline-none focus-visible:outline-none"
+                            title={tText("Remover transação")}
                           >
-                            {tText("Sim")}
+                            <Trash2 className="w-4 h-4" />
                           </button>
-                          <button
-                            id={`btn-cancel-delete-${t.id}`}
-                            onClick={() => setDeletingId(null)}
-                            className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
-                          >
-                            {tText("Não")}
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          id={`btn-delete-${t.id}`}
-                          onClick={() => setDeletingId(t.id)}
-                          className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 hover:scale-110 active:scale-95 transition-all cursor-pointer outline-none focus:outline-none focus-visible:outline-none"
-                          title={tText("Remover transação")}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        )}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>

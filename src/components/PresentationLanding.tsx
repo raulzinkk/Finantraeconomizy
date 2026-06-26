@@ -50,7 +50,7 @@ export default function PresentationLanding({ onProceedToAuth }: PresentationLan
           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 flex items-center justify-center">
             <BarChart3 className="w-5 h-5 text-indigo-500" />
           </div>
-          <h3 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit1Title}</h3>
+          <h2 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit1Title}</h2>
           <p className="text-xs text-slate-550 leading-relaxed">
             {t.benefit1Desc}
           </p>
@@ -61,7 +61,7 @@ export default function PresentationLanding({ onProceedToAuth }: PresentationLan
           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 flex items-center justify-center">
             <Coins className="w-5 h-5 text-amber-500" />
           </div>
-          <h3 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit2Title}</h3>
+          <h2 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit2Title}</h2>
           <p className="text-xs text-slate-550 leading-relaxed">
             {t.benefit2Desc}
           </p>
@@ -72,7 +72,7 @@ export default function PresentationLanding({ onProceedToAuth }: PresentationLan
           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 flex items-center justify-center">
             <Goal className="w-5 h-5 text-emerald-500" />
           </div>
-          <h3 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit3Title}</h3>
+          <h2 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit3Title}</h2>
           <p className="text-xs text-slate-550 leading-relaxed">
             {t.benefit3Desc}
           </p>
@@ -83,7 +83,7 @@ export default function PresentationLanding({ onProceedToAuth }: PresentationLan
           <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-950 flex items-center justify-center">
             <Server className="w-5 h-5 text-indigo-600" />
           </div>
-          <h3 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit4Title}</h3>
+          <h2 className="font-bold text-slate-900 text-sm tracking-tight">{t.benefit4Title}</h2>
           <p className="text-xs text-slate-550 leading-relaxed">
             {t.benefit4Desc}
           </p>
@@ -96,7 +96,7 @@ export default function PresentationLanding({ onProceedToAuth }: PresentationLan
           <ShieldCheck className="w-10 h-10 text-indigo-400" />
         </div>
         <div className="space-y-1.5 text-center md:text-left">
-          <h4 className="font-bold text-sm text-slate-100 tracking-tight">{t.manifestoTitle}</h4>
+          <h3 className="font-bold text-sm text-slate-100 tracking-tight">{t.manifestoTitle}</h3>
           <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
             {t.manifestoDesc}
           </p>

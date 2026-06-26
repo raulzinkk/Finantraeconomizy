@@ -59,3 +59,15 @@ export interface SupabaseStatus {
   isSynced: boolean;
   errorMsg?: string;
 }
+
+export interface AppNotification {
+  id: string;
+  type: 'bill_added' | 'earning_added' | 'expense_added' | 'investment_added' | 'maintenance';
+  title: string;
+  description: string;
+  timestamp: string; // ISO string or formatted
+  isRead: boolean;
+  isMaintenance: boolean;
+  expiryTime?: number; // timestamp in milliseconds (e.g. Date.now() + 2 * 60 * 60 * 1000)
+}
+

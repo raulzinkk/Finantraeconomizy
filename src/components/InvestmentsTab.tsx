@@ -223,7 +223,7 @@ export default function InvestmentsTab({
       {/* 2. Header Controllers */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
         <div>
-          <h4 className="font-bold text-slate-900 text-sm">{tText("Lista de Ativos Contemplados")}</h4>
+          <h3 className="font-bold text-slate-900 text-sm">{tText("Lista de Ativos Contemplados")}</h3>
           <p className="text-xs text-slate-500">{tText("Mantenha os custos e preços médios dos seus investimentos em carteiras manuais.")}</p>
         </div>
 
@@ -405,7 +405,7 @@ export default function InvestmentsTab({
       {/* Investments List Cards */}
       <div className="bg-white rounded-2xl border border-slate-205 overflow-hidden shadow-xs">
         <div className="px-6 py-4 border-b border-slate-150">
-          <h4 className="font-bold text-slate-900 text-sm">{tText("Inventário de Ativos Cadastrados")}</h4>
+          <h3 className="font-bold text-slate-900 text-sm">{tText("Inventário de Ativos Cadastrados")}</h3>
         </div>
 
         {investments.length === 0 ? (

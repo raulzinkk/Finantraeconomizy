@@ -335,6 +335,81 @@ export default function FinanceSummary({
     ];
   }, [totalEarnings, totalExpenses, paidBillsAmount, totalInvestedCost, tText]);
 
+  // Chronological monthly comparison of earnings versus expenses
+  const monthlyComparisonData = useMemo(() => {
+    const monthlyMap: Record<string, { earnings: number; expenses: number }> = {};
+
+    // Helper to get month key "YYYY-MM"
+    const getMonthKey = (dateStr: string) => {
+      if (!dateStr) return '';
+      return dateStr.slice(0, 7); // "YYYY-MM"
+    };
+
+    // Helper to format month key to readable label like "Jan/26" or "Jun"
+    const formatMonthKey = (key: string) => {
+      const [year, month] = key.split('-');
+      if (!year || !month) return key;
+      const monthNames: Record<string, string> = {
+        '01': tText('Jan'),
+        '02': tText('Fev'),
+        '03': tText('Mar'),
+        '04': tText('Abr'),
+        '05': tText('Mai'),
+        '06': tText('Jun'),
+        '07': tText('Jul'),
+        '08': tText('Ago'),
+        '09': tText('Set'),
+        '10': tText('Out'),
+        '11': tText('Nov'),
+        '12': tText('Dez')
+      };
+      return `${monthNames[month] || month}/${year.slice(2)}`;
+    };
+
+    // Process transactions
+    transactions.forEach((t) => {
+      const key = getMonthKey(t.date);
+      if (!key) return;
+      if (!monthlyMap[key]) {
+        monthlyMap[key] = { earnings: 0, expenses: 0 };
+      }
+      if (t.type === 'earnings') {
+        monthlyMap[key].earnings += t.amount;
+      } else {
+        monthlyMap[key].expenses += t.amount;
+      }
+    });
+
+    // Process paid monthly bills
+    monthlyBills.forEach((b) => {
+      if (b.isPaid) {
+        const key = getMonthKey(b.dueDate);
+        if (!key) return;
+        if (!monthlyMap[key]) {
+          monthlyMap[key] = { earnings: 0, expenses: 0 };
+        }
+        monthlyMap[key].expenses += b.amount;
+      }
+    });
+
+    // If empty, ensure we show at least the current month
+    const keys = Object.keys(monthlyMap);
+    if (keys.length === 0) {
+      const curKey = new Date().toISOString().slice(0, 7);
+      monthlyMap[curKey] = { earnings: 0, expenses: 0 };
+    }
+
+    // Sort keys chronologically
+    return Object.keys(monthlyMap)
+      .sort()
+      .map((key) => ({
+        monthKey: key,
+        name: formatMonthKey(key),
+        Ganhos: Math.round(monthlyMap[key].earnings),
+        Gastos: Math.round(monthlyMap[key].expenses),
+      }));
+  }, [transactions, monthlyBills, tText]);
+
   return (
     <div className="space-y-6">
       {/* 1. Main Stats Ribbon */}
@@ -799,31 +874,61 @@ export default function FinanceSummary({
         </div>
       </div>
 
-      {/* 4. Cashflow Bar Overview */}
-      <div id="cashflow-bar-chart-container" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-        <div>
-          <h4 className="text-sm font-bold text-slate-900 mb-1">{tText("Métricas de Fluxo Geral")}</h4>
-          <p className="text-xs text-slate-500 mb-4">
-            {tText("Comparativo entre suas Entradas Totais obtidas, as Saídas consolidadas (gastos + contas quitadas) e o Aporte Total em investimentos.")}
-          </p>
+      {/* 4. Bottom Charts (General Cashflow Metrics & Monthly Comparison of Earnings vs Expenses) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* General Cashflow Metrics */}
+        <div id="cashflow-bar-chart-container" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 mb-1">{tText("Métricas de Fluxo Geral")}</h4>
+            <p className="text-xs text-slate-500 mb-4">
+              {tText("Comparativo entre suas Entradas Totais obtidas, as Saídas consolidadas (gastos + contas quitadas) e o Aporte Total em investimentos.")}
+            </p>
+          </div>
+
+          <div className="h-[240px] w-full mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={balanceFlowData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} />
+                <YAxis fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} tickFormatter={(v) => `${formatCurrency(v, currency).slice(0, 7)}`} />
+                <Tooltip formatter={(value: any) => `${formatCurrency(Number(value), currency)}`} />
+                <Legend verticalAlign="bottom" height={36} />
+                <Bar dataKey="Entradas" name={tText("Entradas")} fill="#10B981" radius={[8, 8, 0, 0]} barSize={50} />
+                <Bar dataKey="Saídas" name={tText("Saídas")} fill="#EF4444" radius={[8, 8, 0, 0]} barSize={50} />
+                <Bar dataKey="Investido" name={tText("Investido")} fill="#475569" radius={[8, 8, 0, 0]} barSize={50} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="h-[240px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={balanceFlowData}
-              margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} />
-              <YAxis fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} tickFormatter={(v) => `${formatCurrency(v, currency).slice(0, 7)}`} />
-              <Tooltip formatter={(value: any) => `${formatCurrency(Number(value), currency)}`} />
-              <Legend verticalAlign="bottom" height={36} />
-              <Bar dataKey="Entradas" name={tText("Entradas")} fill="#10B981" radius={[8, 8, 0, 0]} barSize={50} />
-              <Bar dataKey="Saídas" name={tText("Saídas")} fill="#EF4444" radius={[8, 8, 0, 0]} barSize={50} />
-              <Bar dataKey="Investido" name={tText("Investido")} fill="#475569" radius={[8, 8, 0, 0]} barSize={50} />
-            </BarChart>
-          </ResponsiveContainer>
+        {/* Monthly Comparison of Earnings vs Expenses */}
+        <div id="monthly-comparison-chart-container" className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-bold text-slate-900 mb-1">{tText("Comparativo Mensal de Ganhos vs Gastos")}</h4>
+            <p className="text-xs text-slate-500 mb-4">
+              {tText("Acompanhamento histórico mês a mês das suas entradas e saídas totais acumuladas.")}
+            </p>
+          </div>
+
+          <div className="h-[240px] w-full mt-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={monthlyComparisonData}
+                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} />
+                <YAxis fontSize={11} stroke="#94a3b8" axisLine={false} tickLine={false} tickFormatter={(v) => `${formatCurrency(v, currency).slice(0, 7)}`} />
+                <Tooltip formatter={(value: any) => `${formatCurrency(Number(value), currency)}`} />
+                <Legend verticalAlign="bottom" height={36} />
+                <Bar dataKey="Ganhos" name={tText("Ganhos")} fill="#10B981" radius={[6, 6, 0, 0]} barSize={35} />
+                <Bar dataKey="Gastos" name={tText("Gastos")} fill="#EF4444" radius={[6, 6, 0, 0]} barSize={35} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
     </div>

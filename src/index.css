@@ -1,9 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
+  --color-slate-400: #5E6E82;
+  --color-slate-450: #4E5E72;
+  --color-slate-500: #4A5A6D;
+  --color-gray-400: #627285;
+  --color-gray-500: #526376;
 }
 
 body {

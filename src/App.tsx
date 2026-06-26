@@ -10,12 +10,14 @@ import {
   MonthlyBill,
   Investment,
   UserPreferences,
-  SupabaseStatus
+  SupabaseStatus,
+  AppNotification
 } from './types';
 import {
   SEED_TRANSACTIONS,
   SEED_BILLS,
-  SEED_INVESTMENTS
+  SEED_INVESTMENTS,
+  formatCurrency
 } from './utils';
 import {
   testFirebaseConnection as testConnection,
@@ -28,6 +30,7 @@ import {
   fetchInvestments,
   upsertInvestment,
   deleteInvestmentFromDb,
+  fetchMaintenanceNotifications,
   auth
 } from './firebaseService';
 
@@ -37,6 +40,7 @@ import FinanceSummary from './components/FinanceSummary';
 import TransactionsTab from './components/TransactionsTab';
 import MonthlyBillsTab from './components/MonthlyBillsTab';
 import InvestmentsTab from './components/InvestmentsTab';
+import NotificationsTab from './components/NotificationsTab';
 import ProfileSelector from './components/ProfileSelector';
 import AuthTab from './components/AuthTab';
 import PresentationLanding from './components/PresentationLanding';
@@ -65,7 +69,9 @@ import {
   Smartphone,
   Globe,
   Download,
-  Monitor
+  Monitor,
+  Bell,
+  Hammer
 } from 'lucide-react';
 
 const TIPS = [
@@ -81,7 +87,7 @@ export default function App() {
   const { t, tText } = useLanguage();
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth' | 'notifications'>('dashboard');
 
   // Core States
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -92,6 +98,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const [preferences, setPreferences] = useState<UserPreferences>({
     currency: 'BRL',
@@ -293,6 +300,28 @@ export default function App() {
     setMonthlyBills(billsList);
     setInvestments(investsList);
 
+    // Load and clean up expired maintenance alerts (older than 2 hours)
+    const localN = localStorage.getItem(`fin_notifications_${profId}`);
+    let notifList: AppNotification[] = localN ? JSON.parse(localN) : [];
+    notifList = notifList.filter(n => !n.isMaintenance || !n.expiryTime || Date.now() < n.expiryTime);
+
+    // Seed default welcome notification if completely empty
+    if (notifList.length === 0) {
+      notifList = [
+        {
+          id: `n_welcome_${Date.now()}`,
+          type: 'earning_added',
+          title: 'Bem-vindo ao Finantra!',
+          description: 'Sua carteira autônoma e segura está ativa. Seus dados estão completamente protegidos e são mantidos sob seu controle exclusivo.',
+          timestamp: new Date().toISOString(),
+          isRead: false,
+          isMaintenance: false
+        }
+      ];
+      localStorage.setItem(`fin_notifications_${profId}`, JSON.stringify(notifList));
+    }
+    setNotifications(notifList);
+
     // B. If Cloud Sync enabled, try to fetch from Supabase
     if (isCloud) {
       const isConnected = await testConnection();
@@ -312,6 +341,20 @@ export default function App() {
           localStorage.setItem(`fin_trans_${profId}`, JSON.stringify(remoteT));
           localStorage.setItem(`fin_bills_${profId}`, JSON.stringify(remoteB));
           localStorage.setItem(`fin_invests_${profId}`, JSON.stringify(remoteI));
+
+          // Also fetch maintenance notifications from Supabase if available
+          const remoteMaint = await fetchMaintenanceNotifications();
+          if (remoteMaint !== null) {
+            let updatedNotifs = [...notifList];
+            // Remove previous maintenance alerts
+            updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
+            // Filter out expired ones
+            const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+            updatedNotifs = [...activeMaint, ...updatedNotifs];
+            
+            setNotifications(updatedNotifs);
+            localStorage.setItem(`fin_notifications_${profId}`, JSON.stringify(updatedNotifs));
+          }
 
           setDbStatus({ isConnected: true, isSynced: true });
         } else {
@@ -336,6 +379,31 @@ export default function App() {
     }
   }, [currentProfileId, loadProfileData]);
 
+  // Synchronize maintenance notifications from Supabase when entering notifications tab
+  useEffect(() => {
+    if (activeTab === 'notifications' && currentProfileId) {
+      const activeProf = profiles.find(p => p.id === currentProfileId);
+      if (activeProf?.isCloudSync) {
+        fetchMaintenanceNotifications().then(remoteMaint => {
+          if (remoteMaint !== null) {
+            setNotifications(prev => {
+              let updatedNotifs = [...prev];
+              // Remove previous maintenance alerts
+              updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
+              const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+              updatedNotifs = [...activeMaint, ...updatedNotifs];
+              
+              localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updatedNotifs));
+              return updatedNotifs;
+            });
+          }
+        }).catch(err => {
+          console.warn('Failed to fetch maintenance notifications on tab enter:', err);
+        });
+      }
+    }
+  }, [activeTab, currentProfileId, profiles]);
+
 
 
   // Toggle cloud sync parameter on the active profile
@@ -358,6 +426,90 @@ export default function App() {
 
   // WRITE OPERATIONS
   
+  // Helper to add system notifications
+  const addSystemNotification = useCallback((
+    type: 'bill_added' | 'earning_added' | 'expense_added' | 'investment_added' | 'maintenance',
+    title: string,
+    description: string,
+    isMaintenance = false,
+    expiryTime?: number
+  ) => {
+    const newNotif: AppNotification = {
+      id: `n_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      type,
+      title,
+      description,
+      timestamp: new Date().toISOString(),
+      isRead: false,
+      isMaintenance,
+      expiryTime
+    };
+    setNotifications(prev => {
+      const filtered = prev.filter(n => !n.isMaintenance || !n.expiryTime || Date.now() < n.expiryTime);
+      const updated = [newNotif, ...filtered];
+      localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
+      return updated;
+    });
+  }, [currentProfileId]);
+
+  const handleMarkNotificationAsRead = (id: string) => {
+    setNotifications(prev => {
+      const updated = prev.map(n => n.id === id ? { ...n, isRead: true } : n);
+      localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleMarkAllNotificationsAsRead = () => {
+    setNotifications(prev => {
+      const updated = prev.map(n => ({ ...n, isRead: true }));
+      localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleDeleteNotification = (id: string) => {
+    setNotifications(prev => {
+      const updated = prev.filter(n => n.id !== id);
+      localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleClearAllReadNotifications = () => {
+    setNotifications(prev => {
+      const updated = prev.filter(n => !n.isRead || n.isMaintenance);
+      localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleRefreshNotifications = async (): Promise<{ success: boolean; count: number; error?: string }> => {
+    if (!currentProfileId) return { success: false, count: 0, error: 'Perfil não selecionado.' };
+    try {
+      const remoteMaint = await fetchMaintenanceNotifications();
+      if (remoteMaint !== null) {
+        let count = 0;
+        setNotifications(prev => {
+          let updatedNotifs = [...prev];
+          // Remove previous maintenance alerts
+          updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
+          const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+          updatedNotifs = [...activeMaint, ...updatedNotifs];
+          count = activeMaint.length;
+          localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updatedNotifs));
+          return updatedNotifs;
+        });
+        return { success: true, count };
+      } else {
+        return { success: false, count: 0, error: 'Não foi possível conectar ao banco de dados Supabase.' };
+      }
+    } catch (err: any) {
+      console.warn('Failed to refresh maintenance notifications:', err);
+      return { success: false, count: 0, error: err?.message || 'Erro inesperado.' };
+    }
+  };
+
   // A. Transactions
   const handleAddTransaction = async (newT: Omit<Transaction, 'id' | 'profileId'>) => {
     const transObj: Transaction = {
@@ -369,6 +521,21 @@ export default function App() {
     const updated = [transObj, ...transactions];
     setTransactions(updated);
     localStorage.setItem(`fin_trans_${currentProfileId}`, JSON.stringify(updated));
+
+    // Trigger Notification
+    if (transObj.type === 'earnings') {
+      addSystemNotification(
+        'earning_added',
+        'Ganho Adicionado',
+        `O ganho "${transObj.description}" no valor de ${formatCurrency(transObj.amount, preferences.currency)} foi registrado com sucesso.`
+      );
+    } else {
+      addSystemNotification(
+        'expense_added',
+        'Gasto Adicionado',
+        `O gasto "${transObj.description}" no valor de ${formatCurrency(transObj.amount, preferences.currency)} foi registrado com sucesso.`
+      );
+    }
 
     if (currentProfile.isCloudSync) {
       await upsertTransaction(transObj);
@@ -396,6 +563,13 @@ export default function App() {
     const updated = [...monthlyBills, billObj];
     setMonthlyBills(updated);
     localStorage.setItem(`fin_bills_${currentProfileId}`, JSON.stringify(updated));
+
+    // Trigger Notification
+    addSystemNotification(
+      'bill_added',
+      'Conta Adicionada',
+      `A conta "${billObj.description}" com vencimento em ${billObj.dueDate.split('-').reverse().join('/')} no valor de ${formatCurrency(billObj.amount, preferences.currency)} foi registrada.`
+    );
 
     if (currentProfile.isCloudSync) {
       await upsertMonthlyBill(billObj);
@@ -440,6 +614,13 @@ export default function App() {
     const updated = [...investments, investObj];
     setInvestments(updated);
     localStorage.setItem(`fin_invests_${currentProfileId}`, JSON.stringify(updated));
+
+    // Trigger Notification
+    addSystemNotification(
+      'investment_added',
+      'Investimento Adicionado',
+      `O investimento em "${investObj.name}" no valor de ${formatCurrency(investObj.amountInvested, preferences.currency)} foi alocado via corretora ${investObj.broker}.`
+    );
 
     if (currentProfile.isCloudSync) {
       await upsertInvestment(investObj);
@@ -828,10 +1009,12 @@ export default function App() {
               { id: 'transactions', name: t.navTransactions, icon: ArrowRightLeft },
               { id: 'bills', name: t.navBills, icon: CalendarCheck2 },
               { id: 'investments', name: t.navInvestments, icon: TrendingUp },
+              { id: 'notifications', name: tText('Notificações'), icon: Bell },
               { id: 'auth', name: loggedInUser ? t.navAuth : (t.language === 'pt-BR' ? 'Acesso & Login' : (t.language === 'es' ? 'Acceso e Inicio' : 'Access & Login')), icon: LogIn },
               { id: 'config', name: t.navConfig, icon: Settings }
             ].map((tab) => {
               const IconComp = tab.icon;
+              const unreadNotifCount = notifications.filter(n => !n.isRead && (!n.isMaintenance || !n.expiryTime || Date.now() < n.expiryTime)).length;
               return (
                 <button
                   id={`nav-link-${tab.id}`}
@@ -859,6 +1042,14 @@ export default function App() {
                       }
                     >
                       {billsProximityCounts.total}
+                    </span>
+                  )}
+                  {tab.id === 'notifications' && unreadNotifCount > 0 && (
+                    <span 
+                      className="ml-auto flex items-center justify-center text-[10px] font-bold px-2 py-0.5 rounded-full text-white bg-indigo-650 min-w-[20px] h-5 shadow-xs shrink-0 animate-pulse"
+                      title={`${unreadNotifCount} ${tText("notificação(ões) não lida(s)")}`}
+                    >
+                      {unreadNotifCount}
                     </span>
                   )}
                 </button>
@@ -944,6 +1135,25 @@ export default function App() {
                 onUpdateInvestmentValue={handleUpdateInvestmentValue}
                 onDeleteInvestment={handleDeleteInvestment}
                 currency={preferences.currency}
+              />
+            </div>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === 'notifications' && (
+            <div className="space-y-6 animate-fadeIn">
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-950 tracking-tight">{tText("Central de Notificações")}</h2>
+                <p className="text-xs text-gray-500">{tText("Monitore atividades de ganhos, gastos, faturas vencendo e alertas de manutenção enviados pelo Supabase.")}</p>
+              </div>
+
+              <NotificationsTab
+                notifications={notifications}
+                onMarkAsRead={handleMarkNotificationAsRead}
+                onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+                onDeleteNotification={handleDeleteNotification}
+                onClearAllRead={handleClearAllReadNotifications}
+                onRefresh={handleRefreshNotifications}
               />
             </div>
           )}

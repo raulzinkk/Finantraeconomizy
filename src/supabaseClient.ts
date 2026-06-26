@@ -76,9 +76,19 @@ CREATE TABLE IF NOT EXISTS investments (
   user_id TEXT NOT NULL
 );
 
+-- 5. Create app_maintenance table for notifications
+CREATE TABLE IF NOT EXISTS app_maintenance (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  duration_hours INTEGER DEFAULT 2,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 -- Enable Row Level Security (RLS) but default to allow public access for development, or customize as needed:
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE monthly_bills DISABLE ROW LEVEL SECURITY;
 ALTER TABLE investments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE app_maintenance DISABLE ROW LEVEL SECURITY;
 `;
