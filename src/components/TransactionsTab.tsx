@@ -7,7 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../translations';
-import { Transaction, TransactionType } from '../types';
+import { Transaction, TransactionType, TrashItem } from '../types';
 import {
   CATEGORIES_EARNINGS,
   CATEGORIES_EXPENSES,
@@ -27,7 +27,8 @@ import {
   Tag,
   CreditCard,
   FileText,
-  X
+  X,
+  RotateCcw
 } from 'lucide-react';
 
 interface TransactionsTabProps {
@@ -35,6 +36,9 @@ interface TransactionsTabProps {
   onAddTransaction: (trans: Omit<Transaction, 'id' | 'profileId'>) => void;
   onDeleteTransaction: (id: string) => void;
   currency: string;
+  trashItems?: TrashItem[];
+  onRestoreTransaction?: (item: TrashItem) => void;
+  onDeletePermanently?: (id: string) => void;
 }
 
 export default function TransactionsTab({
@@ -42,6 +46,9 @@ export default function TransactionsTab({
   onAddTransaction,
   onDeleteTransaction,
   currency,
+  trashItems = [],
+  onRestoreTransaction,
+  onDeletePermanently,
 }: TransactionsTabProps) {
   const { tText } = useLanguage();
   // States
@@ -50,6 +57,8 @@ export default function TransactionsTab({
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [activeSubTab, setActiveSubTab] = useState<'active' | 'trash'>('active');
+  const [deletingTrashId, setDeletingTrashId] = useState<string | null>(null);
 
   // Form States
   const [formType, setFormType] = useState<TransactionType>('expenses');
@@ -294,6 +303,23 @@ export default function TransactionsTab({
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, filterType, searchQuery, selectedCategory, tText]);
+
+  // Filter & Search Logic for Trash
+  const filteredTrashList = useMemo(() => {
+    return trashItems
+      .filter((item) => {
+        const t = item.transaction;
+        if (!t) return false;
+        const matchesType = filterType === 'all' || t.type === filterType;
+        const matchesQuery = t.description.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                             (t.notes || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             t.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                             tText(t.category).toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCategory = selectedCategory === 'all' || t.category === selectedCategory;
+        return matchesType && matchesQuery && matchesCategory;
+      })
+      .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+  }, [trashItems, filterType, searchQuery, selectedCategory, tText]);
 
   return (
     <div className="space-y-6">
@@ -586,117 +612,288 @@ export default function TransactionsTab({
 
       {/* Transactions Table / List view */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="px-6 py-4 border-b border-slate-155 flex items-center justify-between">
-          <h3 className="font-bold text-slate-900 text-sm">{tText("Histórico de Lançamentos")}</h3>
+        <div className="px-6 py-4 border-b border-slate-155 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-slate-900 text-sm">{tText("Histórico de Lançamentos")}</h3>
+            
+            {/* Active vs Trash Tab Toggle */}
+            <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              <button
+                id="tab-sub-active"
+                type="button"
+                onClick={() => {
+                  setActiveSubTab('active');
+                  setDeletingId(null);
+                }}
+                className={`px-3 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all ${
+                  activeSubTab === 'active'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {tText("Ativas")}
+              </button>
+              <button
+                id="tab-sub-trash"
+                type="button"
+                onClick={() => {
+                  setActiveSubTab('trash');
+                  setDeletingTrashId(null);
+                }}
+                className={`px-3 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-all flex items-center gap-1 ${
+                  activeSubTab === 'trash'
+                    ? 'bg-white text-rose-600 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {tText("Lixeira")}
+                {trashItems.length > 0 && (
+                  <span className="bg-rose-100 text-rose-600 text-[9px] px-1.5 py-0.2 rounded-full font-bold font-mono">
+                    {trashItems.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
           <span className="text-xs font-medium text-slate-400 font-mono">
-            {tText("Mostrando")} {filteredList.length} {tText("de")} {transactions.length} {tText("registros")}
+            {activeSubTab === 'active' ? (
+              <>
+                {tText("Mostrando")} {filteredList.length} {tText("de")} {transactions.length} {tText("registros")}
+              </>
+            ) : (
+              <>
+                {tText("Lixeira")}: {filteredTrashList.length} {tText("de")} {trashItems.length} {tText("registros")}
+              </>
+            )}
           </span>
         </div>
 
-        {filteredList.length === 0 ? (
-          <div className="py-12 px-6 text-center text-slate-400 flex flex-col items-center justify-center">
-            <Tag className="w-10 h-10 text-slate-200 mb-3" />
-            <p className="text-sm font-medium">{tText("Nenhuma transação encontrada")}</p>
-            <p className="text-xs text-slate-400 mt-1">{tText("Refine seus filtros acima ou clique em \"Lançar Transação\" para começar.")}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="py-3.5 px-6">{tText("Lançamento / Categoria")}</th>
-                  <th className="py-3.5 px-4">{tText("Método")}</th>
-                  <th className="py-3.5 px-4">{tText("Data")}</th>
-                  <th className="py-3.5 px-4 text-right">{tText("Valor")}</th>
-                  <th className="py-3.5 px-6 text-center w-16">{tText("Ações")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-xs">
-                <AnimatePresence initial={false}>
-                  {filteredList.map((t) => (
-                    <motion.tr
-                      key={t.id}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: -15, transition: { duration: 0.15 } }}
-                      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
-                      className="hover:bg-slate-50/40 transition-colors"
-                    >
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded-xl shrink-0 ${
-                            t.type === 'earnings' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
-                          }`}>
-                            {t.type === 'earnings' ? (
-                              <ArrowUpCircle className="w-4 h-4" />
-                            ) : (
-                              <ArrowDownCircle className="w-4 h-4" />
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p id={`trans-desc-${t.id}`} className="font-semibold text-gray-900 truncate">{t.description}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
-                                {tText(t.category)}
-                              </span>
-                              {t.notes && (
-                                <span className="text-[10px] text-gray-400 truncate max-w-[150px] italic">
-                                  "{t.notes}"
-                                </span>
+        {activeSubTab === 'active' && (
+          filteredList.length === 0 ? (
+            <div className="py-12 px-6 text-center text-slate-400 flex flex-col items-center justify-center">
+              <Tag className="w-10 h-10 text-slate-200 mb-3" />
+              <p className="text-sm font-medium">{tText("Nenhuma transação encontrada")}</p>
+              <p className="text-xs text-slate-400 mt-1">{tText("Refine seus filtros acima ou clique em \"Lançar Transação\" para começar.")}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <th className="py-3.5 px-6">{tText("Lançamento / Categoria")}</th>
+                    <th className="py-3.5 px-4">{tText("Método")}</th>
+                    <th className="py-3.5 px-4">{tText("Data")}</th>
+                    <th className="py-3.5 px-4 text-right">{tText("Valor")}</th>
+                    <th className="py-3.5 px-6 text-center w-16">{tText("Ações")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  <AnimatePresence initial={false}>
+                    {filteredList.map((t) => (
+                      <motion.tr
+                        key={t.id}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -15, transition: { duration: 0.15 } }}
+                        transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                        className="hover:bg-slate-50/40 transition-colors"
+                      >
+                        <td className="py-4 px-6">
+                          <div className="flex items-center gap-3">
+                            <div className={`p-2 rounded-xl shrink-0 ${
+                              t.type === 'earnings' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'
+                            }`}>
+                              {t.type === 'earnings' ? (
+                                <ArrowUpCircle className="w-4 h-4" />
+                              ) : (
+                                <ArrowDownCircle className="w-4 h-4" />
                               )}
                             </div>
+                            <div className="min-w-0">
+                              <p id={`trans-desc-${t.id}`} className="font-semibold text-gray-900 truncate">{t.description}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">
+                                  {tText(t.category)}
+                                </span>
+                                {t.notes && (
+                                  <span className="text-[10px] text-gray-400 truncate max-w-[150px] italic">
+                                    "{t.notes}"
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4 text-gray-600 font-medium whitespace-nowrap">
-                        {tText(t.paymentMethod)}
-                      </td>
-                      <td className="py-4 px-4 text-gray-500 font-mono whitespace-nowrap">
-                        {formatDate(t.date)}
-                      </td>
-                      <td className="py-4 px-4 text-right font-bold whitespace-nowrap">
-                        <span className={t.type === 'earnings' ? 'text-emerald-600' : 'text-rose-600'}>
-                          {t.type === 'earnings' ? '+' : '-'} {formatCurrency(t.amount, currency)}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-center">
-                        {deletingId === t.id ? (
-                          <div className="flex items-center justify-center gap-1.5 animate-fadeIn">
+                        </td>
+                        <td className="py-4 px-4 text-gray-600 font-medium whitespace-nowrap">
+                          {tText(t.paymentMethod)}
+                        </td>
+                        <td className="py-4 px-4 text-gray-500 font-mono whitespace-nowrap">
+                          {formatDate(t.date)}
+                        </td>
+                        <td className="py-4 px-4 text-right font-bold whitespace-nowrap">
+                          <span className={t.type === 'earnings' ? 'text-emerald-600' : 'text-rose-600'}>
+                            {t.type === 'earnings' ? '+' : '-'} {formatCurrency(t.amount, currency)}
+                          </span>
+                        </td>
+                        <td className="py-4 px-6 text-center">
+                          {deletingId === t.id ? (
+                            <div className="flex items-center justify-center gap-1.5 animate-fadeIn">
+                              <button
+                                id={`btn-confirm-delete-${t.id}`}
+                                onClick={() => {
+                                  onDeleteTransaction(t.id);
+                                  setDeletingId(null);
+                                }}
+                                className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-rose-700 transition-colors cursor-pointer"
+                              >
+                                {tText("Sim")}
+                              </button>
+                              <button
+                                id={`btn-cancel-delete-${t.id}`}
+                                onClick={() => setDeletingId(null)}
+                                className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                              >
+                                {tText("Não")}
+                              </button>
+                            </div>
+                          ) : (
                             <button
-                              id={`btn-confirm-delete-${t.id}`}
-                              onClick={() => {
-                                onDeleteTransaction(t.id);
-                                setDeletingId(null);
-                              }}
-                              className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-rose-700 transition-colors cursor-pointer"
+                              id={`btn-delete-${t.id}`}
+                              onClick={() => setDeletingId(t.id)}
+                              className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 hover:scale-110 active:scale-95 transition-all cursor-pointer outline-none focus:outline-none focus-visible:outline-none"
+                              title={tText("Remover transação")}
                             >
-                              {tText("Sim")}
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                            <button
-                              id={`btn-cancel-delete-${t.id}`}
-                              onClick={() => setDeletingId(null)}
-                              className="bg-slate-100 text-slate-600 text-[10px] font-bold px-2.5 py-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
-                            >
-                              {tText("Não")}
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            id={`btn-delete-${t.id}`}
-                            onClick={() => setDeletingId(t.id)}
-                            className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 hover:scale-110 active:scale-95 transition-all cursor-pointer outline-none focus:outline-none focus-visible:outline-none"
-                            title={tText("Remover transação")}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </td>
-                    </motion.tr>
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
+                          )}
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+
+        {activeSubTab === 'trash' && (
+          filteredTrashList.length === 0 ? (
+            <div className="py-12 px-6 text-center text-slate-400 flex flex-col items-center justify-center">
+              <Trash2 className="w-10 h-10 text-slate-200 mb-3 animate-pulse" />
+              <p className="text-sm font-medium">{tText("A lixeira está vazia")}</p>
+              <p className="text-xs text-slate-450 mt-1 max-w-sm">{tText("Os lançamentos excluídos ficam guardados por até 5 dias antes de serem apagados para sempre.")}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <th className="py-3.5 px-6">{tText("Lançamento / Categoria")}</th>
+                    <th className="py-3.5 px-4">{tText("Método")}</th>
+                    <th className="py-3.5 px-4">{tText("Excluído em")}</th>
+                    <th className="py-3.5 px-4 text-right">{tText("Valor")}</th>
+                    <th className="py-3.5 px-6 text-center w-28">{tText("Ações")}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs">
+                  <AnimatePresence initial={false}>
+                    {filteredTrashList.map((item) => {
+                      const t = item.transaction;
+                      return (
+                        <motion.tr
+                          key={item.id}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, x: -15, transition: { duration: 0.15 } }}
+                          transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+                          className="hover:bg-slate-50/40 transition-colors"
+                        >
+                          <td className="py-4 px-6">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded-xl shrink-0 ${
+                                t.type === 'earnings' ? 'bg-emerald-50/70 text-emerald-600/80' : 'bg-rose-50/70 text-rose-500/80'
+                              }`}>
+                                {t.type === 'earnings' ? (
+                                  <ArrowUpCircle className="w-4 h-4" />
+                                ) : (
+                                  <ArrowDownCircle className="w-4 h-4" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-550 truncate line-through">{t.description}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">
+                                    {tText(t.category)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-4 px-4 text-gray-400 font-medium whitespace-nowrap">
+                            {tText(t.paymentMethod)} <span className="text-[10px] text-gray-450">({formatDate(t.date)})</span>
+                          </td>
+                          <td className="py-4 px-4 text-gray-500 font-mono whitespace-nowrap">
+                            {formatDate(item.deletedAt)}
+                          </td>
+                          <td className="py-4 px-4 text-right font-bold whitespace-nowrap">
+                            <span className={`${t.type === 'earnings' ? 'text-emerald-600/60' : 'text-rose-600/60'} line-through`}>
+                              {t.type === 'earnings' ? '+' : '-'} {formatCurrency(t.amount, currency)}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Restore button */}
+                              <button
+                                id={`btn-restore-${item.id}`}
+                                onClick={() => onRestoreTransaction?.(item)}
+                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 p-1.5 rounded-lg active:scale-95 transition-all cursor-pointer outline-none"
+                                title={tText("Restaurar transação")}
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+
+                              {/* Delete permanently button */}
+                              {deletingTrashId === item.id ? (
+                                <div className="flex items-center gap-1.5 animate-fadeIn">
+                                  <button
+                                    id={`btn-confirm-delete-perm-${item.id}`}
+                                    onClick={() => {
+                                      onDeletePermanently?.(item.id);
+                                      setDeletingTrashId(null);
+                                    }}
+                                    className="bg-rose-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-lg hover:bg-rose-700 transition-colors cursor-pointer"
+                                  >
+                                    {tText("Apagar")}
+                                  </button>
+                                  <button
+                                    id={`btn-cancel-delete-perm-${item.id}`}
+                                    onClick={() => setDeletingTrashId(null)}
+                                    className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                                  >
+                                    {tText("Não")}
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  id={`btn-delete-perm-${item.id}`}
+                                  onClick={() => setDeletingTrashId(item.id)}
+                                  className="text-gray-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg active:scale-95 transition-all cursor-pointer outline-none"
+                                  title={tText("Excluir permanentemente")}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </motion.tr>
+                      );
+                    })}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
     </div>

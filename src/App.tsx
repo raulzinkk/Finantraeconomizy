@@ -11,7 +11,8 @@ import {
   Investment,
   UserPreferences,
   SupabaseStatus,
-  AppNotification
+  AppNotification,
+  TrashItem
 } from './types';
 import {
   SEED_TRANSACTIONS,
@@ -31,7 +32,12 @@ import {
   upsertInvestment,
   deleteInvestmentFromDb,
   fetchMaintenanceNotifications,
-  auth
+  auth,
+  saveUserProfileAndPrefsToCloud,
+  loadCloudUserProfileAndPrefs,
+  fetchTrashItems,
+  upsertTrashItem,
+  deleteTrashItemFromDb
 } from './firebaseService';
 
 // Subcomponents
@@ -101,6 +107,7 @@ export default function App() {
   const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
 
   const [preferences, setPreferences] = useState<UserPreferences>({
     currency: 'BRL',
@@ -302,6 +309,32 @@ export default function App() {
     setMonthlyBills(billsList);
     setInvestments(investsList);
 
+    // Load local trash items
+    const localTrash = localStorage.getItem(`fin_trash_${profId}`);
+    let trashList: TrashItem[] = localTrash ? JSON.parse(localTrash) : [];
+
+    // Filter out expired trash (> 5 days)
+    const fiveDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+    const expiredTrash = trashList.filter(item => {
+      const delTime = new Date(item.deletedAt).getTime();
+      return delTime < fiveDaysAgo;
+    });
+
+    trashList = trashList.filter(item => {
+      const delTime = new Date(item.deletedAt).getTime();
+      return delTime >= fiveDaysAgo;
+    });
+
+    setTrashItems(trashList);
+    localStorage.setItem(`fin_trash_${profId}`, JSON.stringify(trashList));
+
+    // Async prune expired local trash items from cloud
+    if (expiredTrash.length > 0 && isCloud) {
+      expiredTrash.forEach(item => {
+        deleteTrashItemFromDb(item.id).catch(err => console.warn('Failed to prune expired cloud trash item:', err));
+      });
+    }
+
     // Load and clean up expired maintenance alerts (older than 2 hours)
     const localN = localStorage.getItem(`fin_notifications_${profId}`);
     let notifList: AppNotification[] = localN ? JSON.parse(localN) : [];
@@ -343,6 +376,29 @@ export default function App() {
           localStorage.setItem(`fin_trans_${profId}`, JSON.stringify(remoteT));
           localStorage.setItem(`fin_bills_${profId}`, JSON.stringify(remoteB));
           localStorage.setItem(`fin_invests_${profId}`, JSON.stringify(remoteI));
+
+          // Fetch and sync trash items
+          const remoteTrash = await fetchTrashItems(profId);
+          if (remoteTrash !== null) {
+            const mergedTrashMap = new Map<string, TrashItem>();
+            
+            // Add local non-expired trash
+            trashList.forEach(item => mergedTrashMap.set(item.id, item));
+            
+            // Add remote trash if non-expired, otherwise prune
+            remoteTrash.forEach(item => {
+              const delTime = new Date(item.deletedAt).getTime();
+              if (delTime >= fiveDaysAgo) {
+                mergedTrashMap.set(item.id, item);
+              } else {
+                deleteTrashItemFromDb(item.id).catch(err => console.warn('Pruned expired cloud trash:', err));
+              }
+            });
+
+            const updatedTrashList = Array.from(mergedTrashMap.values());
+            setTrashItems(updatedTrashList);
+            localStorage.setItem(`fin_trash_${profId}`, JSON.stringify(updatedTrashList));
+          }
 
           // Also fetch maintenance notifications from Supabase if available
           const remoteMaint = await fetchMaintenanceNotifications();
@@ -408,6 +464,158 @@ export default function App() {
 
 
 
+  // Handle successful login or registration with guest data migration & cloud sync
+  const handleLoginSuccess = async (email: string) => {
+    setIsSyncing(true);
+    const userEmail = email.toLowerCase();
+    const safeKey = userEmail.replace(/[^a-zA-Z0-9]/g, '_');
+    const userProfileId = `p-${safeKey}`;
+
+    // 1. Check and Migrate Guest data (gains, expenses, bills, investments) to the newly authenticated account
+    const guestProfileId = localStorage.getItem('fin_active_id') || 'p-default';
+    const guestTransStr = localStorage.getItem(`fin_trans_${guestProfileId}`);
+    const guestBillsStr = localStorage.getItem(`fin_bills_${guestProfileId}`);
+    const guestInvestsStr = localStorage.getItem(`fin_invests_${guestProfileId}`);
+
+    let migratedTransactions: Transaction[] = [];
+    if (guestTransStr) {
+      try {
+        const guestTrans = JSON.parse(guestTransStr) as Transaction[];
+        const guestFiltered = guestTrans.filter(t => t && t.id && !t.id.includes('-'));
+        migratedTransactions = guestFiltered.map(t => ({
+          ...t,
+          profileId: userProfileId
+        }));
+      } catch (e) {
+        console.warn('Error parsing guest transactions:', e);
+      }
+    }
+
+    let migratedBills: MonthlyBill[] = [];
+    if (guestBillsStr) {
+      try {
+        const guestBills = JSON.parse(guestBillsStr) as MonthlyBill[];
+        const guestFiltered = guestBills.filter(b => b && b.id && !b.id.includes('-'));
+        migratedBills = guestFiltered.map(b => ({
+          ...b,
+          profileId: userProfileId
+        }));
+      } catch (e) {
+        console.warn('Error parsing guest bills:', e);
+      }
+    }
+
+    let migratedInvestments: Investment[] = [];
+    if (guestInvestsStr) {
+      try {
+        const guestInvests = JSON.parse(guestInvestsStr) as Investment[];
+        const guestFiltered = guestInvests.filter(i => i && i.id && !i.id.includes('-'));
+        migratedInvestments = guestFiltered.map(i => ({
+          ...i,
+          profileId: userProfileId
+        }));
+      } catch (e) {
+        console.warn('Error parsing guest investments:', e);
+      }
+    }
+
+    // Merge guest records into user's local arrays to prevent overwriting cloud records or local records
+    const existingUserTransStr = localStorage.getItem(`fin_trans_${userProfileId}`);
+    let userTransactions: Transaction[] = existingUserTransStr ? JSON.parse(existingUserTransStr) : [];
+    const existingUserBillsStr = localStorage.getItem(`fin_bills_${userProfileId}`);
+    let userBills: MonthlyBill[] = existingUserBillsStr ? JSON.parse(existingUserBillsStr) : [];
+    const existingUserInvestsStr = localStorage.getItem(`fin_invests_${userProfileId}`);
+    let userInvestments: Investment[] = existingUserInvestsStr ? JSON.parse(existingUserInvestsStr) : [];
+
+    const transMap = new Map<string, Transaction>();
+    userTransactions.forEach(t => transMap.set(t.id, t));
+    migratedTransactions.forEach(t => transMap.set(t.id, t));
+    userTransactions = Array.from(transMap.values());
+
+    const billsMap = new Map<string, MonthlyBill>();
+    userBills.forEach(b => billsMap.set(b.id, b));
+    migratedBills.forEach(b => billsMap.set(b.id, b));
+    userBills = Array.from(billsMap.values());
+
+    const investsMap = new Map<string, Investment>();
+    userInvestments.forEach(i => investsMap.set(i.id, i));
+    migratedInvestments.forEach(i => investsMap.set(i.id, i));
+    userInvestments = Array.from(investsMap.values());
+
+    localStorage.setItem(`fin_trans_${userProfileId}`, JSON.stringify(userTransactions));
+    localStorage.setItem(`fin_bills_${userProfileId}`, JSON.stringify(userBills));
+    localStorage.setItem(`fin_invests_${userProfileId}`, JSON.stringify(userInvestments));
+
+    // Async upload of migrated items to cloud
+    migratedTransactions.forEach(async (t) => {
+      try { await upsertTransaction(t, safeKey); } catch (e) { console.warn('Error uploading migrated transaction:', e); }
+    });
+    migratedBills.forEach(async (b) => {
+      try { await upsertMonthlyBill(b, safeKey); } catch (e) { console.warn('Error uploading migrated bill:', e); }
+    });
+    migratedInvestments.forEach(async (i) => {
+      try { await upsertInvestment(i, safeKey); } catch (e) { console.warn('Error uploading migrated investment:', e); }
+    });
+
+    // Clear guest local storage to prevent duplicate migrations
+    if (migratedTransactions.length > 0 || migratedBills.length > 0 || migratedInvestments.length > 0) {
+      localStorage.setItem(`fin_trans_${guestProfileId}`, '[]');
+      localStorage.setItem(`fin_bills_${guestProfileId}`, '[]');
+      localStorage.setItem(`fin_invests_${guestProfileId}`, '[]');
+    }
+
+    // 2. Fetch or Save user profiles list and preferences to the cloud
+    const cloudConfig = await loadCloudUserProfileAndPrefs(userEmail);
+    let finalProfiles: AppProfile[] = [];
+    let finalPrefs: UserPreferences | null = null;
+
+    if (cloudConfig) {
+      if (cloudConfig.cloudProfiles && cloudConfig.cloudProfiles.length > 0) {
+        finalProfiles = cloudConfig.cloudProfiles;
+      }
+      if (cloudConfig.cloudPrefs) {
+        finalPrefs = cloudConfig.cloudPrefs;
+      }
+    }
+
+    if (finalProfiles.length === 0) {
+      // Cloud was empty, prepare from local profiles or create default
+      const storedProfilesStr = localStorage.getItem(`fin_profiles_${safeKey}`);
+      if (storedProfilesStr) {
+        try { finalProfiles = JSON.parse(storedProfilesStr); } catch {}
+      }
+      if (finalProfiles.length === 0) {
+        finalProfiles = [
+          { id: userProfileId, name: `Minha Carteira • ${userEmail.split('@')[0]}`, isCloudSync: true }
+        ];
+      }
+      // Save newly created profile config to cloud
+      await saveUserProfileAndPrefsToCloud(userEmail, finalProfiles, finalPrefs || preferences);
+    } else {
+      // Cloud had profiles, save them locally
+      localStorage.setItem(`fin_profiles_${safeKey}`, JSON.stringify(finalProfiles));
+    }
+
+    if (finalPrefs) {
+      localStorage.setItem(`fin_preferences_${safeKey}`, JSON.stringify(finalPrefs));
+      setPreferences(finalPrefs);
+    } else {
+      // Save current local preferences to cloud since none exist in cloud
+      await saveUserProfileAndPrefsToCloud(userEmail, finalProfiles, preferences);
+    }
+
+    // Update active profiles list and profile ID
+    setProfiles(finalProfiles);
+    const storedActiveId = localStorage.getItem(`fin_active_id_${safeKey}`) || finalProfiles[0]?.id || userProfileId;
+    setCurrentProfileId(storedActiveId);
+    localStorage.setItem(`fin_active_id_${safeKey}`, storedActiveId);
+
+    // Finally set user logged in, which completes the state update flow
+    setLoggedInUser(userEmail);
+    setActiveTab('dashboard');
+    setIsSyncing(false);
+  };
+
   // Toggle cloud sync parameter on the active profile
   const handleToggleSync = (isSyncEnabled: boolean) => {
     const updated = profiles.map(p => {
@@ -418,6 +626,12 @@ export default function App() {
     });
     setProfiles(updated);
     localStorage.setItem('fin_profiles', JSON.stringify(updated));
+
+    if (loggedInUser) {
+      const safeKey = loggedInUser.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
+      localStorage.setItem(`fin_profiles_${safeKey}`, JSON.stringify(updated));
+      saveUserProfileAndPrefsToCloud(loggedInUser, updated, preferences);
+    }
     
     if (isSyncEnabled) {
       loadProfileData(currentProfileId, true);
@@ -545,12 +759,64 @@ export default function App() {
   };
 
   const handleDeleteTransaction = async (id: string) => {
+    const targetTrans = transactions.find(t => t.id === id);
+    if (targetTrans) {
+      // Create trash item
+      const trashObj: TrashItem = {
+        id: `trash_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        transaction: targetTrans,
+        deletedAt: new Date().toISOString()
+      };
+
+      // Update local trash state & cache
+      const newTrash = [trashObj, ...trashItems];
+      setTrashItems(newTrash);
+      localStorage.setItem(`fin_trash_${currentProfileId}`, JSON.stringify(newTrash));
+
+      // Sync trash item to cloud if sync enabled
+      if (currentProfile.isCloudSync) {
+        await upsertTrashItem(trashObj).catch(e => console.warn('Failed to sync deleted transaction to cloud trash:', e));
+      }
+    }
+
     const updated = transactions.filter(t => t.id !== id);
     setTransactions(updated);
     localStorage.setItem(`fin_trans_${currentProfileId}`, JSON.stringify(updated));
 
     if (currentProfile.isCloudSync) {
       await deleteTransactionFromDb(id);
+    }
+  };
+
+  const handleRestoreTransaction = async (item: TrashItem) => {
+    // 1. Add back to active transactions
+    const restoredTrans = item.transaction;
+    const updatedTrans = [...transactions, restoredTrans];
+    setTransactions(updatedTrans);
+    localStorage.setItem(`fin_trans_${currentProfileId}`, JSON.stringify(updatedTrans));
+
+    if (currentProfile.isCloudSync) {
+      await upsertTransaction(restoredTrans);
+    }
+
+    // 2. Remove from trash
+    const updatedTrash = trashItems.filter(t => t.id !== item.id);
+    setTrashItems(updatedTrash);
+    localStorage.setItem(`fin_trash_${currentProfileId}`, JSON.stringify(updatedTrash));
+
+    if (currentProfile.isCloudSync) {
+      await deleteTrashItemFromDb(item.id);
+    }
+  };
+
+  const handleDeletePermanently = async (trashId: string) => {
+    // Remove from trash
+    const updatedTrash = trashItems.filter(t => t.id !== trashId);
+    setTrashItems(updatedTrash);
+    localStorage.setItem(`fin_trash_${currentProfileId}`, JSON.stringify(updatedTrash));
+
+    if (currentProfile.isCloudSync) {
+      await deleteTrashItemFromDb(trashId);
     }
   };
 
@@ -665,6 +931,10 @@ export default function App() {
     const safeKey = loggedInUser ? loggedInUser.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_') : 'default';
     localStorage.setItem(loggedInUser ? `fin_profiles_${safeKey}` : 'fin_profiles', JSON.stringify(updatedProfiles));
     
+    if (loggedInUser) {
+      saveUserProfileAndPrefsToCloud(loggedInUser, updatedProfiles, preferences);
+    }
+
     setCurrentProfileId(newId);
     localStorage.setItem(loggedInUser ? `fin_active_id_${safeKey}` : 'fin_active_id', newId);
     
@@ -709,6 +979,10 @@ export default function App() {
     setPreferences(newPref);
     const safeKey = loggedInUser ? loggedInUser.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_') : 'default';
     localStorage.setItem(loggedInUser ? `fin_preferences_${safeKey}` : 'fin_preferences', JSON.stringify(newPref));
+    
+    if (loggedInUser) {
+      saveUserProfileAndPrefsToCloud(loggedInUser, profiles, newPref);
+    }
   };
 
   return (
@@ -878,8 +1152,7 @@ export default function App() {
                   loggedInUser={loggedInUser}
                   initialMode={landingMode === 'auth_register' ? 'register' : 'login'}
                   onLogin={(email) => {
-                    setLoggedInUser(email);
-                    setActiveTab('dashboard');
+                    handleLoginSuccess(email);
                   }}
                   onLogout={() => {
                     setLoggedInUser(null);
@@ -1102,6 +1375,9 @@ export default function App() {
                 onAddTransaction={handleAddTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
                 currency={preferences.currency}
+                trashItems={trashItems}
+                onRestoreTransaction={handleRestoreTransaction}
+                onDeletePermanently={handleDeletePermanently}
               />
             </div>
           )}

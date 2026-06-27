@@ -71,3 +71,10 @@ export interface AppNotification {
   expiryTime?: number; // timestamp in milliseconds (e.g. Date.now() + 2 * 60 * 60 * 1000)
 }
 
+export interface TrashItem {
+  id: string;
+  transaction: Transaction;
+  deletedAt: string; // ISO string
+}
+
+

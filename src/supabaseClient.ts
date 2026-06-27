@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT PRIMARY KEY,
   password_hash TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
-  username TEXT NOT NULL
+  username TEXT NOT NULL,
+  profiles_json TEXT,
+  preferences_json TEXT
 );
 
 -- 2. Create transactions table
@@ -85,10 +87,27 @@ CREATE TABLE IF NOT EXISTS app_maintenance (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 6. Create trash_transactions table (stores deleted records for up to 5 days)
+CREATE TABLE IF NOT EXISTS trash_transactions (
+  id TEXT PRIMARY KEY,
+  deleted_at TEXT NOT NULL,
+  trans_id TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('earnings', 'expenses')),
+  description TEXT NOT NULL,
+  amount NUMERIC NOT NULL,
+  category TEXT NOT NULL,
+  date TEXT NOT NULL,
+  payment_method TEXT DEFAULT 'Manual',
+  notes TEXT,
+  profile_id TEXT NOT NULL,
+  user_id TEXT NOT NULL
+);
+
 -- Enable Row Level Security (RLS) but default to allow public access for development, or customize as needed:
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE monthly_bills DISABLE ROW LEVEL SECURITY;
 ALTER TABLE investments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE app_maintenance DISABLE ROW LEVEL SECURITY;
+ALTER TABLE trash_transactions DISABLE ROW LEVEL SECURITY;
 `;

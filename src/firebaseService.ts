@@ -10,7 +10,8 @@ import {
   query, 
   where 
 } from 'firebase/firestore';
-import { Transaction, MonthlyBill, Investment } from './types';
+import { Transaction, MonthlyBill, Investment, AppProfile, UserPreferences, TrashItem } from './types';
+import { getDoc } from 'firebase/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 import { supabase } from './supabaseClient';
 
@@ -470,8 +471,8 @@ export async function fetchTransactions(profileId: string): Promise<Transaction[
   return mergedList.length > 0 ? mergedList : [];
 }
 
-export async function upsertTransaction(transaction: Transaction): Promise<boolean> {
-  const userId = getActiveUserId();
+export async function upsertTransaction(transaction: Transaction, customUserId?: string): Promise<boolean> {
+  const userId = customUserId || getActiveUserId();
   if (!userId) return false;
 
   let supabaseSuccess = false;
@@ -635,8 +636,8 @@ export async function fetchMonthlyBills(profileId: string): Promise<MonthlyBill[
   return mergedList.length > 0 ? mergedList : [];
 }
 
-export async function upsertMonthlyBill(bill: MonthlyBill): Promise<boolean> {
-  const userId = getActiveUserId();
+export async function upsertMonthlyBill(bill: MonthlyBill, customUserId?: string): Promise<boolean> {
+  const userId = customUserId || getActiveUserId();
   if (!userId) return false;
 
   let supabaseSuccess = false;
@@ -801,8 +802,8 @@ export async function fetchInvestments(profileId: string): Promise<Investment[] 
   return mergedList.length > 0 ? mergedList : [];
 }
 
-export async function upsertInvestment(investment: Investment): Promise<boolean> {
-  const userId = getActiveUserId();
+export async function upsertInvestment(investment: Investment, customUserId?: string): Promise<boolean> {
+  const userId = customUserId || getActiveUserId();
   if (!userId) return false;
 
   let supabaseSuccess = false;
@@ -1224,5 +1225,271 @@ export async function migrateAllFirestoreToSupabase(): Promise<MigrationSummary>
   }
 
   return summary;
+}
+
+// -------------------------------------------------------------
+// USER PROFILE & PREFERENCES BACKUP (Saves to Firestore & Supabase)
+// -------------------------------------------------------------
+
+export async function saveUserProfileAndPrefsToCloud(email: string, profiles: AppProfile[], prefs: UserPreferences): Promise<boolean> {
+  const colPath = 'users';
+  let success = false;
+
+  // 1. Save to Supabase
+  try {
+    const { error } = await supabase
+      .from('users')
+      .update({
+        profiles_json: JSON.stringify(profiles),
+        preferences_json: JSON.stringify(prefs)
+      })
+      .eq('email', email.toLowerCase());
+    
+    if (!error) {
+      success = true;
+    } else {
+      console.warn('Failed to save user profiles & preferences to Supabase:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase saveUserProfileAndPrefs exception:', err);
+  }
+
+  // 2. Save to Firestore
+  try {
+    const docId = email.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+    const docRef = doc(db, colPath, docId);
+    
+    // Get existing user document to preserve email, passwordHash, username, createdAt
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const existingData = docSnap.data();
+      await setDoc(docRef, {
+        ...existingData,
+        profilesJson: JSON.stringify(profiles),
+        preferencesJson: JSON.stringify(prefs)
+      });
+      success = true;
+    } else {
+      // Create user document if it does not exist in Firestore
+      await setDoc(docRef, {
+        email: email.toLowerCase(),
+        profilesJson: JSON.stringify(profiles),
+        preferencesJson: JSON.stringify(prefs),
+        createdAt: new Date().toISOString()
+      });
+      success = true;
+    }
+  } catch (err) {
+    console.error('Failed to save user profiles & preferences to Firestore:', err);
+  }
+  return success;
+}
+
+export async function loadCloudUserProfileAndPrefs(email: string): Promise<{ cloudProfiles: AppProfile[]; cloudPrefs: UserPreferences | null } | null> {
+  let cloudProfiles: AppProfile[] = [];
+  let cloudPrefs: UserPreferences | null = null;
+  let found = false;
+
+  // 1. Try loading from Firestore
+  try {
+    const docId = email.toLowerCase().replace(/[^a-zA-Z0-9_]/g, '_');
+    const docRef = doc(db, 'users', docId);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      found = true;
+      if (data.profilesJson) {
+        try {
+          cloudProfiles = JSON.parse(data.profilesJson);
+        } catch (e) {
+          console.warn('Error parsing Firestore profiles:', e);
+        }
+      }
+      
+      if (data.preferencesJson) {
+        try {
+          cloudPrefs = JSON.parse(data.preferencesJson);
+        } catch (e) {
+          console.warn('Error parsing Firestore preferences:', e);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load cloud user profiles & preferences from Firestore:', err);
+  }
+
+  // 2. Try loading from Supabase
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('profiles_json, preferences_json')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    if (!error && data) {
+      found = true;
+      if (data.profiles_json && cloudProfiles.length === 0) {
+        try {
+          cloudProfiles = JSON.parse(data.profiles_json);
+        } catch (e) {
+          console.warn('Error parsing Supabase profiles:', e);
+        }
+      }
+      if (data.preferences_json && !cloudPrefs) {
+        try {
+          cloudPrefs = JSON.parse(data.preferences_json);
+        } catch (e) {
+          console.warn('Error parsing Supabase preferences:', e);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load user profiles & preferences from Supabase:', err);
+  }
+
+  if (found) {
+    return { cloudProfiles, cloudPrefs };
+  }
+  return null;
+}
+
+
+// -------------------------------------------------------------
+// TRASH / DELETED TRANSACTIONS BACKUP
+// -------------------------------------------------------------
+
+export async function fetchTrashItems(profileId: string): Promise<TrashItem[] | null> {
+  const userId = getActiveUserId();
+  if (!userId) return null;
+
+  const trashMap = new Map<string, TrashItem>();
+
+  // 1. Try loading from Firestore
+  try {
+    const q = query(
+      collection(db, 'trash_transactions'),
+      where('userId', '==', userId),
+      where('profileId', '==', profileId)
+    );
+    const querySnapshot = await getDocs(q);
+    querySnapshot.forEach((document) => {
+      const data = document.data();
+      const t = data.transaction;
+      trashMap.set(data.id, {
+        id: data.id,
+        deletedAt: data.deletedAt,
+        transaction: {
+          id: t.id,
+          type: t.type as any,
+          description: t.description,
+          amount: Number(t.amount),
+          category: t.category,
+          date: t.date,
+          paymentMethod: t.paymentMethod || 'Manual',
+          notes: t.notes || '',
+          profileId: t.profileId
+        }
+      });
+    });
+  } catch (err) {
+    console.error('Failed to fetch trash items from Firestore:', err);
+  }
+
+  // 2. Try loading from Supabase if table exists
+  try {
+    const { data, error } = await supabase
+      .from('trash_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('profile_id', profileId);
+    
+    if (!error && data) {
+      data.forEach(item => {
+        trashMap.set(item.id, {
+          id: item.id,
+          deletedAt: item.deleted_at || item.deletedAt,
+          transaction: {
+            id: item.trans_id,
+            type: item.type as any,
+            description: item.description,
+            amount: Number(item.amount),
+            category: item.category,
+            date: item.date,
+            paymentMethod: item.payment_method || 'Manual',
+            notes: item.notes || '',
+            profileId: item.profile_id
+          }
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('Supabase trash_transactions fetch exception (ignore if table does not exist):', err);
+  }
+
+  return Array.from(trashMap.values());
+}
+
+export async function upsertTrashItem(item: TrashItem): Promise<boolean> {
+  const userId = getActiveUserId();
+  if (!userId) return false;
+
+  let supabaseSuccess = false;
+  // Try writing to Supabase
+  try {
+    const { error } = await supabase.from('trash_transactions').upsert({
+      id: item.id,
+      deleted_at: item.deletedAt,
+      trans_id: item.transaction.id,
+      type: item.transaction.type,
+      description: item.transaction.description || '',
+      amount: Number(item.transaction.amount) || 0,
+      category: item.transaction.category || '',
+      date: item.transaction.date || '',
+      payment_method: item.transaction.paymentMethod || 'Manual',
+      notes: item.transaction.notes || '',
+      profile_id: item.transaction.profileId,
+      user_id: userId
+    });
+    if (!error) {
+      supabaseSuccess = true;
+    }
+  } catch (err) {
+    console.warn('Supabase trash_transactions upsert exception:', err);
+  }
+
+  // Dual-write to Firestore
+  try {
+    await setDoc(doc(db, 'trash_transactions', item.id), {
+      id: item.id,
+      deletedAt: item.deletedAt,
+      userId: userId,
+      profileId: item.transaction.profileId,
+      transaction: item.transaction
+    });
+    return true;
+  } catch (err) {
+    console.error('Failed to upsert trash item in Firestore:', err);
+    return supabaseSuccess;
+  }
+}
+
+export async function deleteTrashItemFromDb(id: string): Promise<boolean> {
+  let supabaseSuccess = false;
+  try {
+    const { error } = await supabase.from('trash_transactions').delete().eq('id', id);
+    if (!error) {
+      supabaseSuccess = true;
+    }
+  } catch (err) {
+    console.warn('Supabase trash_transactions delete exception:', err);
+  }
+
+  try {
+    await deleteDoc(doc(db, 'trash_transactions', id));
+    return true;
+  } catch (err) {
+    console.error('Failed to delete trash item in Firestore:', err);
+    return supabaseSuccess;
+  }
 }
 

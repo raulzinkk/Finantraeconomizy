@@ -94,6 +94,8 @@ export default function EcoIaTab({
         text: 'Estou aqui para ajudar você a gerenciar suas finanças com rapidez e praticidade através da sua digitação. Você pode registrar qualquer ganho, gasto, conta ou investimento apenas me dizendo o que fez!\n\nTente algo como:\n- 🟢 *"Recebi 3500 de salário hoje"* (Ganho)\n- 🔴 *"Gastei 45 reais com Uber"* (Gasto)\n- 📅 *"Conta de internet de 119 vencendo dia 10"* (Conta Mensal)\n- 📈 *"Investi 1500 no Tesouro Direto pela XP"* (Investimento)',
         timestamp: new Date(),
         suggestions: [
+          'Me dê uma dica financeira 💡',
+          'Blog do Finantra Economizy 📰',
           'Recebi R$ 1.200 de freelancer',
           'Comprei mercado por R$ 350,00',
           'Aluguel de R$ 1.500 vencendo dia 05',
@@ -297,6 +299,7 @@ export default function EcoIaTab({
       lowerText.includes('como funciona') || 
       lowerText.includes('o que é') || 
       lowerText.includes('ajuda') || 
+      lowerText.includes('dica') || 
       lowerText.includes('dicas') || 
       lowerText.includes('recomenda') || 
       lowerText.includes('explic') ||
@@ -305,7 +308,15 @@ export default function EcoIaTab({
       lowerText.includes('tesouro') ||
       lowerText.includes('ações') ||
       lowerText.includes('fii') ||
-      lowerText.includes('fundo')
+      lowerText.includes('fundo') ||
+      lowerText.includes('blog') ||
+      lowerText.includes('substack') ||
+      lowerText.includes('economizy') ||
+      lowerText.includes('finantra') ||
+      lowerText.includes('poupar') ||
+      lowerText.includes('economizar') ||
+      lowerText.includes('conselho') ||
+      lowerText.includes('conselhos')
     ) {
       return { type: 'help', text };
     }
@@ -518,7 +529,13 @@ export default function EcoIaTab({
           id: botMsgId,
           sender: 'bot',
           text: responseText,
-          timestamp: new Date()
+          timestamp: new Date(),
+          suggestions: [
+            'Me dê uma dica financeira 💡',
+            'Blog do Finantra Economizy 📰',
+            'Como funciona a taxa Selic?',
+            'O que é o CDI?'
+          ]
         };
       } else if (intent.type === 'delete_no_match') {
         botMsg = {
@@ -531,13 +548,13 @@ export default function EcoIaTab({
         botMsg = {
           id: botMsgId,
           sender: 'bot',
-          text: 'Entendi que você enviou uma mensagem, mas não consegui identificar um valor monetário para realizar um registro automático, ou a pergunta está fora do meu escopo financeiro.\n\nExperimente falar algo como: *"Gastei R$ 120 com supermercado"* ou pergunte *"O que é CDI?"* para receber ajuda educacional sobre investimentos!',
+          text: 'Entendi que você enviou uma mensagem, mas não consegui identificar um valor monetário para realizar um registro automático, ou a pergunta está fora do meu escopo financeiro.\n\nExperimente falar algo como: *"Gastei R$ 120 com supermercado"* ou pergunte *"Me dê uma dica financeira"* para receber insights educacionais e recomendações do nosso blog!',
           timestamp: new Date(),
           suggestions: [
+            'Me dê uma dica financeira 💡',
+            'Blog do Finantra Economizy 📰',
             'O que é a taxa Selic?',
-            'Como funciona o Tesouro Selic?',
-            'Investi R$ 1.000 em CDB',
-            'Gasto de R$ 50 de restaurante'
+            'Como funciona o Tesouro Selic?'
           ]
         };
       } else {
@@ -612,7 +629,7 @@ export default function EcoIaTab({
     }
   };
 
-  const cancelParsedData = (msgId: string) => {
+    const cancelParsedData = (msgId: string) => {
     setMessages(prev => prev.map(m => {
       if (m.id === msgId) {
         let customText = `❌ **Registro Cancelado**\n\nNenhuma alteração foi efetuada nas suas planilhas de transações ou investimentos.`;
@@ -634,24 +651,72 @@ export default function EcoIaTab({
   // Educational financial guide content library
   const getEducationalResponse = (query: string): string => {
     const q = query.toLowerCase();
+
+    const financialTips = [
+      {
+        title: "Pague-se Primeiro (Princípio do Sucesso)",
+        text: "Quando seu salário cair na conta, separe imediatamente de 10% a 20% para os seus investimentos ou reserva de emergência **antes** de começar a pagar as contas ou fazer despesas discricionárias. Se você só investir o que sobra no final do mês, a resposta quase sempre será zero! Mude a ordem do fluxo financeiro: Receita - Investimento = Gastos."
+      },
+      {
+        title: "Construa sua Reserva de Emergência",
+        text: "A reserva de emergência serve para cobrir imprevistos como perda de renda, problemas de saúde ou consertos emergenciais. O ideal é acumular o equivalente a **3 a 6 meses** de seus custos mensais essenciais se você for CLT, ou de **6 a 12 meses** se for autônomo/empreendedor. Guarde esse dinheiro em locais de liquidez diária e alta segurança, como o **Tesouro Selic** ou um **CDB de 100% do CDI**."
+      },
+      {
+        title: "A Regra das 24 Horas para Evitar Compras por Impulso",
+        text: "Antes de comprar qualquer item que não seja uma necessidade imediata (roupas, eletrônicos, cosméticos), force-se a esperar **24 horas**. Esse tempo de resfriamento ajuda a afastar a urgência gerada pela dopamina do marketing e faz você pensar racionalmente se realmente precisa e pode pagar pelo produto. Em mais de 60% dos casos, você desistirá da compra ou esquecerá dela!"
+      },
+      {
+        title: "Mapeie e Elimine os 'Gastos Invisíveis'",
+        text: "Pequenos gastos recorrentes de baixo valor são os maiores ladrões de orçamento, pois passam despercebidos. Revise periodicamente sua fatura do cartão de crédito e cancele assinaturas de streaming que você não assiste há meses, aplicativos com renovação automática não utilizados, planos de celular desatualizados ou taxas de manutenção de contas correntes (solicite o pacote essencial gratuito exigido pelo Banco Central)."
+      },
+      {
+        title: "Evite o Perigo do Parcelamento no Cartão",
+        text: "Parcelar compras sem juros parece vantajoso, mas acumular dezenas de parcelas pequenas cria um comprometimento gigante da sua renda futura, limitando sua flexibilidade financeira. Use a regra de ouro: se você não tem o dinheiro para pagar à vista, provavelmente não deveria estar comprando. Guarde o dinheiro primeiro e compre à vista (muitas vezes garantindo descontos excelentes!)."
+      },
+      {
+        title: "Defina Metas Financeiras Claras (SMART)",
+        text: "Poupar dinheiro por poupar é difícil. Você precisa dar um nome e um prazo para o seu dinheiro. Crie objetivos específicos:\n- **Curto Prazo (até 1 ano):** Férias de R$ 4.000 em dezembro.\n- **Médio Prazo (1 a 5 anos):** Entrada do apartamento de R$ 30.000 em 3 anos.\n- **Longo Prazo (mais de 5 anos):** Independência financeira e aposentadoria precoce.\nIsso gera motivação e foco na hora de resistir às compras impulsivas."
+      },
+      {
+        title: "Cuidado com o 'Estilo de Vida Inflacionado'",
+        text: "Muitas pessoas aumentam seus gastos na mesma velocidade ou mais rápido do que seus ganhos (comprando carros melhores, mudando para aluguéis mais caros assim que ganham um aumento). Isso é a 'corrida dos ratos'. Quando receber uma promoção ou bônus, mantenha seu padrão de vida por alguns meses e direcione o ganho extra diretamente para aumentar seus investimentos e acelerar sua independência financeira."
+      },
+      {
+        title: "Diversificação é o Único Almoço Grátis no Mercado",
+        text: "Nunca coloque todo o seu dinheiro em um único ativo, corretora ou modalidade de investimento. Monte uma carteira balanceada contendo Renda Fixa (para liquidez e segurança), Fundos Imobiliários (para gerar renda passiva mensal isenta de IR) e Ações de empresas sólidas e perenes (para valorização de longo prazo). Isso protege seu patrimônio contra crises setoriais."
+      }
+    ];
+
+    if (q.includes('blog') || q.includes('substack') || q.includes('economizy') || q.includes('finantra')) {
+      return `### 📰 Blog Finantra Economizy 🚀💚\n\nO **Blog do Finantra Economizy** é o canal oficial de educação e insights financeiros para quem quer aprender a dominar o dinheiro, poupar de verdade e começar a investir de maneira inteligente e descomplicada!\n\nLá você encontra conteúdos exclusivos sobre:\n- 💡 Estratégias práticas de economia diária e corte de gastos inteligentes\n- 📊 Análises simples sobre investimentos (Renda Fixa, Selic, FIIs e Ações)\n- 🧠 Mentalidade financeira e como construir patrimônio sustentável no longo prazo\n- 🚀 Tutoriais e guias de organização pessoal para acelerar sua independência financeira\n\n**Acesse agora mesmo pelo link oficial e inscreva-se para receber novos artigos no seu e-mail:**\n👉 https://substack.com/@finantraeconomizy`;
+    }
+
+    if (q.includes('dica') || q.includes('poupar') || q.includes('economizar') || q.includes('conselho') || q.includes('conselhos')) {
+      // Pick a random tip or use time-based selection to be consistent but diverse
+      const seed = new Date().getMinutes() + new Date().getSeconds();
+      const randomIndex = seed % financialTips.length;
+      const tip = financialTips[randomIndex];
+      
+      return `### 💡 Dica Financeira Finantra: ${tip.title} 🌟\n\n${tip.text}\n\n---\n\n📰 **Quer expandir seus conhecimentos?**\nPara dezenas de outros insights fantásticos sobre economia e investimentos, visite e inscreva-se no **Blog do Finantra Economizy**:\n👉 https://substack.com/@finantraeconomizy 🚀💚`;
+    }
     
     if (q.includes('selic')) {
-      return `### 💡 Guia de Investimento: Taxa Selic 📈\n\nA **Taxa Selic** é a taxa básica de juros da economia brasileira, definida a cada 45 dias pelo Banco Central (COPOM).\n\n**Como ela afeta seus investimentos?**\n- **Renda Fixa:** Quando a Selic sobe, os rendimentos de títulos de Renda Fixa (como Tesouro Selic, CDBs, LCI e LCA) sobem, tornando-os muito atraentes.\n- **Ações e FIIs:** Geralmente, quando a Selic está alta, o investimento em Bolsa de Valores recua, pois os investidores preferem a segurança da renda fixa pagando juros altos.\n- **Poupança:** Se a Selic estiver acima de 8,5% ao ano, a poupança rende 0,5% ao mês + Taxa Referencial (TR). Se estiver igual ou abaixo de 8,5%, rende exatamente 70% da Selic.\n\n**Recomendação de Ouro:** O **Tesouro Selic** é considerado o investimento mais seguro do país, perfeito para sua **Reserva de Emergência**, pois possui liquidez diária (D+0) e rentabilidade diária garantida.`;
+      return `### 💡 Guia de Investimento: Taxa Selic 📈\n\nA **Taxa Selic** é a taxa básica de juros da economia brasileira, definida a cada 45 dias pelo Banco Central (COPOM).\n\n**Como ela afeta seus investimentos?**\n- **Renda Fixa:** Quando a Selic sobe, os rendimentos de títulos de Renda Fixa (como Tesouro Selic, CDBs, LCI e LCA) sobem, tornando-os muito atraentes.\n- **Ações e FIIs:** Geralmente, quando a Selic está alta, o investimento em Bolsa de Valores recua, pois os investidores preferem a segurança da renda fixa pagando juros altos.\n- **Poupança:** Se a Selic estiver acima de 8,5% ao ano, a poupança rende 0,5% ao mês + Taxa Referencial (TR). Se estiver igual ou abaixo de 8,5%, rende exatamente 70% da Selic.\n\n**Recomendação de Ouro:** O **Tesouro Selic** é considerado o investimento mais seguro do país, perfeito para sua **Reserva de Emergência**, pois possui liquidez diária (D+0) e rentabilidade diária garantida.\n\n---\n\n📰 **Quer saber mais sobre investimentos?** Acesse nosso portal com guias exclusivos no **Blog do Finantra Economizy**: https://substack.com/@finantraeconomizy 🚀💚`;
     }
     
     if (q.includes('cdi')) {
-      return `### 📊 O que é o CDI? Entenda Fácil! 💸\n\nO **CDI (Certificado de Depósito Interbancário)** é uma taxa que reflete o custo dos empréstimos de curto prazo que os bancos fazem entre si para fechar o dia com saldo positivo.\n\n**O CDI acompanha a Selic:**\nNormalmente, a taxa do CDI anda colada na Selic (cerca de 0,10 ponto percentual abaixo da taxa básica).\n\n**Onde o CDI é usado?**\nEle serve como o principal termômetro ("benchmark") para a rentabilidade dos títulos de renda fixa privada:\n- **CDB (Certificado de Depósito Bancário):** Um CDB que paga **100% do CDI** é ótimo, pois rende exatamente o rendimento do mercado sem risco. Evite CDBs de grandes bancos tradicionais que pagam menos de 90% do CDI.\n- **LCI/LCA:** São isentos de Imposto de Renda. Portanto, uma LCI que pague **90% do CDI** pode render o equivalente a um CDB de **108% do CDI** com imposto de renda descontado!\n\n**Dica:** Sempre prefira investimentos de liquidez diária que rendam pelo menos **100% do CDI** para guardar sua reserva de curto prazo.`;
+      return `### 📊 O que é o CDI? Entenda Fácil! 💸\n\nO **CDI (Certificado de Depósito Interbancário)** é uma taxa que reflete o custo dos empréstimos de curto prazo que os bancos fazem entre si para fechar o dia com saldo positivo.\n\n**O CDI acompanha a Selic:**\nNormalmente, a taxa do CDI anda colada na Selic (cerca de 0,10 ponto percentual abaixo da taxa básica).\n\n**Onde o CDI é usado?**\nEle serve como o principal termômetro ("benchmark") para a rentabilidade dos títulos de renda fixa privada:\n- **CDB (Certificado de Depósito Bancário):** Um CDB que paga **100% do CDI** é ótimo, pois rende exatamente o rendimento do mercado sem risco. Evite CDBs de grandes bancos tradicionais que pagam menos de 90% do CDI.\n- **LCI/LCA:** São isentos de Imposto de Renda. Portanto, uma LCI que pague **90% do CDI** pode render o equivalente a um CDB de **108% do CDI** com imposto de renda descontado!\n\n**Dica:** Sempre prefira investimentos de liquidez diária que rendam pelo menos **100% do CDI** para guardar sua reserva de curto prazo.\n\n---\n\n📰 **Leia análises de renda fixa atualizadas no Blog do Finantra Economizy:** https://substack.com/@finantraeconomizy 🚀💚`;
     }
 
     if (q.includes('fii') || q.includes('fundo') || q.includes('imobiliário')) {
-      return `### 🏢 Fundos Imobiliários (FIIs): Aluguéis sem Burocracia 🏘️\n\nOs **Fundos Imobiliários (FIIs)** reúnem recursos de milhares de investidores para aplicar em grandes empreendimentos imobiliários, como prédios corporativos de alto padrão, shopping centers, galpões logísticos ou títulos de crédito imobiliário (LCI, CRI).\n\n**Vantagens dos FIIs:**\n1. **Renda Passiva Mensal:** Praticamente todos os FIIs distribuem lucros mensais na sua conta de corretora, simulando um aluguel de imóvel.\n2. **Isenção de IR:** Os dividendos distribuídos a pessoas físicas são atualmente isentos de Imposto de Renda!\n3. **Baixo Custo de Entrada:** Com apenas R$ 10 ou R$ 100 você já adquire uma cota de grandes fundos e começa a receber rendimentos.\n4. **Alta Liquidez:** Diferente de um imóvel físico que demora meses para vender, as cotas de FIIs são vendidas em segundos na Bolsa de Valores (Home Broker).\n\n**Categorias de FIIs:**\n- **FIIs de Tijolo:** Investem em imóveis físicos reais (galpões, escritórios, shoppings). Ótimos para ganho de capital de longo prazo.\n- **FIIs de Papel:** Investem em títulos de dívida imobiliária (CRIs). Geralmente oferecem dividendos mais altos de forma imediata.\n- **FIIs de Fundos (FOFs):** Fundos que compram cotas de outros fundos. Excelentes para iniciantes diversificarem facilmente.`;
+      return `### 🏢 Fundos Imobiliários (FIIs): Aluguéis sem Burocracia 🏘️\n\nOs **Fundos Imobiliários (FIIs)** reúnem recursos de milhares de investidores para aplicar em grandes empreendimentos imobiliários, como prédios corporativos de alto padrão, shopping centers, galpões logísticos ou títulos de crédito imobiliário (LCI, CRI).\n\n**Vantagens dos FIIs:**\n1. **Renda Passiva Mensal:** Praticamente todos os FIIs distribuem lucros mensais na sua conta de corretora, simulando um aluguel de imóvel.\n2. **Isenção de IR:** Os dividendos distribuídos a pessoas físicas são atualmente isentos de Imposto de Renda!\n3. **Baixo Custo de Entrada:** Com apenas R$ 10 ou R$ 100 você já adquire uma cota de grandes fundos e começa a receber rendimentos.\n4. **Alta Liquidez:** Diferente de um imóvel físico que demora meses para vender, as cotas de FIIs são vendidas em segundos na Bolsa de Valores (Home Broker).\n\n**Categorias de FIIs:**\n- **FIIs de Tijolo:** Investem em imóveis físicos reais (galpões, escritórios, shoppings). Ótimos para ganho de capital de longo prazo.\n- **FIIs de Papel:** Investem em títulos de dívida imobiliária (CRIs). Geralmente oferecem dividendos mais altos de forma imediata.\n- **FIIs de Fundos (FOFs):** Fundos que compram cotas de outros fundos. Excelentes para iniciantes diversificarem facilmente.\n\n---\n\n📰 **Quer construir uma carteira de FIIs vencedora?** Confira as dicas exclusivas no **Blog do Finantra Economizy**: https://substack.com/@finantraeconomizy 🚀💚`;
     }
 
     if (q.includes('ações') || q.includes('bolsa') || q.includes('renda variável')) {
-      return `### 📈 Investindo em Ações na Bolsa de Valores 🚀\n\nUma **Ação** representa a menor fração do capital social de uma empresa. Ao comprar uma ação, você se torna **sócio(a)** daquela empresa e passa a participar de seus lucros e crescimento.\n\n**Como você ganha dinheiro com ações?**\n1. **Valorização da Cota:** Se a empresa cresce e melhora seus resultados, as ações tendem a subir de preço na B3 (Bolsa de Valores).\n2. **Proventos (Dividendos e JCP):** Parte do lucro líquido das empresas de capital aberto é obrigatoriamente distribuído aos acionistas.\n\n**Conselhos Cruciais para Iniciantes:**\n- **Foco no Longo Prazo:** Não compre ações para vender amanhã (Day Trade é altamente arriscado). Invista em empresas sólidas visando de 5 a 10 anos.\n- **Diversificação:** Nunca coloque todo o seu capital em uma única empresa. Divida entre setores perenes (Bancos, Energia Elétrica, Saneamento, Telecomunicações).\n- **Reserva de Emergência Primeiro:** Nunca invista na bolsa de valores dinheiro que você possa precisar no curto prazo (menos de 2 anos), pois as oscilações do mercado são diárias.`;
+      return `### 📈 Investindo em Ações na Bolsa de Valores 🚀\n\nUma **Ação** representa a menor fração do capital social de uma empresa. Ao comprar uma ação, você se torna **sócio(a)** daquela empresa e passa a participar de seus lucros e crescimento.\n\n**Como você ganha dinheiro com ações?**\n1. **Valorização da Cota:** Se a empresa cresce e melhora seus resultados, as ações tendem a subir de preço na B3 (Bolsa de Valores).\n2. **Proventos (Dividendos e JCP):** Parte do lucro líquido das empresas de capital aberto é obrigatoriamente distribuído aos acionistas.\n\n**Conselhos Cruciais para Iniciantes:**\n- **Foco no Longo Prazo:** Não compre ações para vender amanhã (Day Trade é altamente arriscado). Invista em empresas sólidas visando de 5 a 10 anos.\n- **Diversificação:** Nunca coloque todo o seu capital em uma única empresa. Divida entre setores perenes (Bancos, Energia Elétrica, Saneamento, Telecomunicações).\n- **Reserva de Emergência Primeiro:** Nunca invista na bolsa de valores dinheiro que você possa precisar no curto prazo (menos de 2 anos), pois as oscilações do mercado são diárias.\n\n---\n\n📰 **Aprenda a analisar ações de modo fácil no Blog do Finantra Economizy:** https://substack.com/@finantraeconomizy 🚀💚`;
     }
 
-    return `### 💡 Guia de Saúde Financeira Finantra 🌟\n\nPara ter uma vida financeira saudável, siga estes três pilares essenciais de organização:\n\n1. **Primeiro Passo (Reserva de Emergência):** Guarde o equivalente a **6 meses** das suas despesas fixas em um investimento seguro e de resgate rápido, como o **Tesouro Selic** ou um **CDB de 100% do CDI** com liquidez diária.\n\n2. **Segundo Passo (Planejamento 50/30/20):**\n   - **50%** de sua renda líquida para gastos essenciais (aluguel, contas básicas, comida, transporte).\n   - **30%** para desejos pessoais e estilo de vida (lazer, compras, passeios, hobbies).\n   - **20%** diretamente para investir pensando no futuro.\n\n3. **Terceiro Passo (Consistência):** Monitore seus saldos ativamente. Sempre registre seus gastos no painel de transações e use nossa aba de **Contas Mensais** para nunca mais esquecer um boleto ou pagar juros por atraso!\n\n**O que mais você gostaria de entender sobre investimentos hoje?** Tente me perguntar sobre: **Taxa Selic**, **CDI**, **CDB**, **Fundos Imobiliários (FIIs)** ou **Ações**!`;
+    return `### 💡 Guia de Saúde Financeira Finantra 🌟\n\nPara ter uma vida financeira saudável, siga estes três pilares essenciais de organização:\n\n1. **Primeiro Passo (Reserva de Emergência):** Guarde o equivalente a **6 meses** das suas despesas fixas em um investimento seguro e de resgate rápido, como o **Tesouro Selic** ou um **CDB de 100% do CDI** com liquidez diária.\n\n2. **Segundo Passo (Planejamento 50/30/20):**\n   - **50%** de sua renda líquida para gastos essenciais (aluguel, contas básicas, comida, transporte).\n   - **30%** para desejos pessoais e estilo de vida (lazer, compras, passeios, hobbies).\n   - **20%** diretamente para investir pensando no futuro.\n\n3. **Terceiro Passo (Consistência):** Monitore seus saldos ativamente. Sempre registre seus gastos no painel de transações e use nossa aba de **Contas Mensais** para nunca mais esquecer um boleto ou pagar juros por atraso!\n\n**O que mais você gostaria de entender sobre investimentos hoje?** Tente me perguntar sobre: **Taxa Selic**, **CDI**, **CDB**, **Fundos Imobiliários (FIIs)**, **Ações** ou peça uma **Dica Financeira**!\n\n---\n\n📰 **Acompanhe dicas e análises detalhadas no Blog do Finantra Economizy:** https://substack.com/@finantraeconomizy 🚀💚`;
   };
 
   return (
@@ -941,13 +1006,39 @@ export default function EcoIaTab({
   );
 }
 
-// Simple bold parser to replace **text** with real <strong> tags in JSX React
+// Simple bold and link parser to replace **text** and Substack URL with real JSX tags in React
+function parseLinks(text: string): React.ReactNode {
+  const linkRegex = /(https:\/\/substack\.com\/@finantraeconomizy)/g;
+  const parts = text.split(linkRegex);
+  return parts.map((part, i) => {
+    if (part === 'https://substack.com/@finantraeconomizy') {
+      return (
+        <a
+          key={`link-${i}`}
+          href="https://substack.com/@finantraeconomizy"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-indigo-700 hover:text-indigo-900 font-extrabold bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-xl transition-all border border-indigo-100 mx-1 align-middle shadow-3xs cursor-pointer"
+        >
+          Blog do Finantra Economizy
+          <ExternalLink className="w-3.5 h-3.5 inline-block" />
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 function parseBoldText(text: string): React.ReactNode {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong className="font-extrabold text-indigo-950" key={i}>{part.slice(2, -2)}</strong>;
+      return (
+        <strong className="font-extrabold text-indigo-950" key={`b-${i}`}>
+          {parseLinks(part.slice(2, -2))}
+        </strong>
+      );
     }
-    return part;
+    return <React.Fragment key={`s-${i}`}>{parseLinks(part)}</React.Fragment>;
   });
 }
