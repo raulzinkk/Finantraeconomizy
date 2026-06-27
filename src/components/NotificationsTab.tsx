@@ -305,33 +305,72 @@ export default function NotificationsTab({
                       )}
 
                       {/* Delete notification */}
-                      {n.isMaintenance ? (
-                        <button
-                          disabled
-                          className="p-1.5 rounded-lg text-slate-200 cursor-not-allowed"
-                          title={tText("Notificações de Manutenção não podem ser excluídas manualmente")}
-                        >
-                          <Trash2 className="w-4 h-4 opacity-40" />
-                        </button>
-                      ) : (
-                        <button
-                          id={`btn-delete-notification-${n.id}`}
-                          onClick={() => {
-                            if (n.isRead) {
-                              onDeleteNotification(n.id);
+                      {(() => {
+                        if (n.isMaintenance) {
+                          const isProblemasCorrigidos = n.title?.toLowerCase().includes("problemas corrigidos") || n.description?.toLowerCase().includes("problemas corrigidos");
+                          const isManutencaoPrevia = n.title?.toLowerCase().includes("manutenção prévia") || n.description?.toLowerCase().includes("manutenção prévia") || n.title?.toLowerCase().includes("manutencao previa") || n.description?.toLowerCase().includes("manutencao previa");
+
+                          if (isProblemasCorrigidos || isManutencaoPrevia) {
+                            const elapsedMs = Date.now() - new Date(n.timestamp).getTime();
+                            const elapsedHours = elapsedMs / (1000 * 60 * 60);
+                            const limitHours = isProblemasCorrigidos ? 3 : 1;
+
+                            if (elapsedHours >= limitHours) {
+                              return (
+                                <button
+                                  id={`btn-delete-notification-${n.id}`}
+                                  onClick={() => onDeleteNotification(n.id)}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all cursor-pointer"
+                                  title={tText("Remover notificação")}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              );
+                            } else {
+                              const remainingMin = Math.ceil(limitHours * 60 - (elapsedMs / (1000 * 60)));
+                              return (
+                                <button
+                                  disabled
+                                  className="p-1.5 rounded-lg text-slate-200 cursor-not-allowed"
+                                  title={tText(`Exclusão bloqueada: Esta notificação só pode ser excluída após ${limitHours} hora(s) da criação. Restam ${remainingMin} minutos.`)}
+                                >
+                                  <Trash2 className="w-4 h-4 opacity-40" />
+                                </button>
+                              );
                             }
-                          }}
-                          disabled={!n.isRead}
-                          className={`p-1.5 rounded-lg transition-all ${
-                            n.isRead
-                              ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer'
-                              : 'text-slate-200 cursor-not-allowed'
-                          }`}
-                          title={n.isRead ? tText("Remover notificação") : tText("Você só pode excluir após visualizar a notificação")}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
+                          } else {
+                            return (
+                              <button
+                                disabled
+                                className="p-1.5 rounded-lg text-slate-200 cursor-not-allowed"
+                                title={tText("Notificações de Manutenção padrão não podem ser excluídas manualmente")}
+                              >
+                                <Trash2 className="w-4 h-4 opacity-40" />
+                              </button>
+                            );
+                          }
+                        } else {
+                          return (
+                            <button
+                              id={`btn-delete-notification-${n.id}`}
+                              onClick={() => {
+                                if (n.isRead) {
+                                  onDeleteNotification(n.id);
+                                }
+                              }}
+                              disabled={!n.isRead}
+                              className={`p-1.5 rounded-lg transition-all ${
+                                n.isRead
+                                  ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer'
+                                  : 'text-slate-200 cursor-not-allowed'
+                              }`}
+                              title={n.isRead ? tText("Remover notificação") : tText("Você só pode excluir após visualizar a notificação")}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          );
+                        }
+                      })()}
                     </div>
                   </motion.div>
                 );
@@ -362,7 +401,11 @@ export default function NotificationsTab({
             </li>
             <li className="flex gap-2">
               <span className="text-indigo-600 font-extrabold">•</span>
-              <span><strong>{tText("Avisos de Manutenção:")}</strong> {tText("Estes avisos importantes não podem ser excluídos pelo usuário. Eles são geridos remotamente e expiram automaticamente após o período estipulado de 2 horas.")}</span>
+              <span><strong>{tText("Alertas Especiais:")}</strong> {tText("Avisos de 'Problemas corrigidos' só podem ser excluídos pelo usuário após 3 horas da sua criação. Avisos de 'Manutenção prévia' podem ser excluídos após 1 hora.")}</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-indigo-600 font-extrabold">•</span>
+              <span><strong>{tText("Manutenção Padrão:")}</strong> {tText("Estes avisos importantes não podem ser excluídos manualmente. Eles expiram automaticamente após o período estipulado de 2 horas.")}</span>
             </li>
           </ul>
         </div>

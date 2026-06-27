@@ -58,6 +58,35 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "name", "type", "amountInvested", "currentAmount", "acquisitionDate", "broker", "profileId", "userId"]
+    },
+    "FinancialGoal": {
+      "title": "FinancialGoal",
+      "description": "A financial target/saving goal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "targetAmount": { "type": "number" },
+        "currentAmount": { "type": "number" },
+        "deadline": { "type": "string" },
+        "category": { "type": "string" },
+        "profileId": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "targetAmount", "currentAmount", "profileId", "userId"]
+    },
+    "TrashTransaction": {
+      "title": "TrashTransaction",
+      "description": "A deleted transaction stored in the trash",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "deletedAt": { "type": "string" },
+        "userId": { "type": "string" },
+        "profileId": { "type": "string" },
+        "transaction": { "type": "object" }
+      },
+      "required": ["id", "deletedAt", "userId", "profileId", "transaction"]
     }
   },
   "firestore": {
@@ -72,6 +101,14 @@
     "/investments/{investmentId}": {
       "schema": "Investment",
       "description": "User investment records database"
+    },
+    "/financial_goals/{goalId}": {
+      "schema": "FinancialGoal",
+      "description": "User financial saving goals"
+    },
+    "/trash_transactions/{trashId}": {
+      "schema": "TrashTransaction",
+      "description": "User deleted transactions in trash bin"
     }
   }
 }

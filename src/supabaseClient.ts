@@ -103,6 +103,18 @@ CREATE TABLE IF NOT EXISTS trash_transactions (
   user_id TEXT NOT NULL
 );
 
+-- 7. Create financial_goals table (stores user targets and savings progress)
+CREATE TABLE IF NOT EXISTS financial_goals (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  target_amount NUMERIC NOT NULL,
+  current_amount NUMERIC NOT NULL,
+  deadline TEXT,
+  category TEXT,
+  profile_id TEXT NOT NULL,
+  user_id TEXT NOT NULL
+);
+
 -- Enable Row Level Security (RLS) but default to allow public access for development, or customize as needed:
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
@@ -110,4 +122,5 @@ ALTER TABLE monthly_bills DISABLE ROW LEVEL SECURITY;
 ALTER TABLE investments DISABLE ROW LEVEL SECURITY;
 ALTER TABLE app_maintenance DISABLE ROW LEVEL SECURITY;
 ALTER TABLE trash_transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE financial_goals DISABLE ROW LEVEL SECURITY;
 `;

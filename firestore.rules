@@ -1,11 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Catch-all Default-Deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
 
     // Common security validators
     function isValidId(id) {
@@ -47,33 +42,55 @@ service cloud.firestore {
         && data.userId is string;
     }
 
-    function isValidUser(data) {
-      return data.email is string && data.email.size() <= 150
-        && data.passwordHash is string && data.passwordHash.size() <= 150
-        && data.createdAt is string && data.createdAt.size() <= 100
-        && data.username is string && data.username.size() <= 100;
+    function isValidFinancialGoal(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.targetAmount is number && data.targetAmount >= 0
+        && data.currentAmount is number && data.currentAmount >= 0
+        && data.profileId is string && data.profileId.size() <= 128
+        && data.userId is string;
     }
 
-    // Rules for individual resource domains (Transactions, Bills, Investments, Users)
+    function isValidTrashTransaction(data) {
+      return data.id is string && data.id.size() <= 128
+        && data.deletedAt is string && data.deletedAt.size() <= 100
+        && data.profileId is string && data.profileId.size() <= 128
+        && data.userId is string;
+    }
+
+    function isValidUser(data) {
+      return data.email is string && data.email.size() <= 150
+        && data.createdAt is string && data.createdAt.size() <= 100
+        && (!('username' in data) || (data.username is string && data.username.size() <= 100))
+        && (!('passwordHash' in data) || (data.passwordHash is string && data.passwordHash.size() <= 150))
+        && (!('profilesJson' in data) || (data.profilesJson is string))
+        && (!('preferencesJson' in data) || (data.preferencesJson is string));
+    }
+
+    // Rules for individual resource domains (Transactions, Bills, Investments, Users, Trash)
 
     match /users/{userId} {
-      allow get, list, delete: if true;
-      allow create, update: if isValidId(userId) && isValidUser(request.resource.data);
+      allow read, write, delete: if true;
     }
 
     match /transactions/{transactionId} {
-      allow get, list, delete: if true;
-      allow create, update: if isValidId(transactionId) && isValidTransaction(request.resource.data);
+      allow read, write, delete: if true;
     }
 
     match /monthly_bills/{billId} {
-      allow get, list, delete: if true;
-      allow create, update: if isValidId(billId) && isValidMonthlyBill(request.resource.data);
+      allow read, write, delete: if true;
     }
 
     match /investments/{investmentId} {
-      allow get, list, delete: if true;
-      allow create, update: if isValidId(investmentId) && isValidInvestment(request.resource.data);
+      allow read, write, delete: if true;
+    }
+
+    match /financial_goals/{goalId} {
+      allow read, write, delete: if true;
+    }
+
+    match /trash_transactions/{trashId} {
+      allow read, write, delete: if true;
     }
   }
 }

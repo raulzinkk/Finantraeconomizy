@@ -16,6 +16,23 @@ body {
   color: #1E293B;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* Impede a seleção de texto na página inteira */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none; /* Padrão moderno */
+}
+
+.sem-selecao {
+  /* Impede a seleção de texto */
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer/Edge */
+  user-select: none; /* Padrão moderno */
+  
+  /* Impede o menu de contexto (clique com o botão direito) em imagens */
+  -webkit-touch-callout: none; /* iOS Safari */
 }
 
 /* Elegant card custom utility for consistency */

@@ -12,7 +12,8 @@ import {
   UserPreferences,
   SupabaseStatus,
   AppNotification,
-  TrashItem
+  TrashItem,
+  FinancialGoal
 } from './types';
 import {
   SEED_TRANSACTIONS,
@@ -31,6 +32,9 @@ import {
   fetchInvestments,
   upsertInvestment,
   deleteInvestmentFromDb,
+  fetchFinancialGoals,
+  upsertFinancialGoal,
+  deleteFinancialGoalFromDb,
   fetchMaintenanceNotifications,
   auth,
   saveUserProfileAndPrefsToCloud,
@@ -52,6 +56,7 @@ import AuthTab from './components/AuthTab';
 import PresentationLanding from './components/PresentationLanding';
 import LanguageSelector from './components/LanguageSelector';
 import EcoIaTab from './components/EcoIaTab';
+import GoalsTab from './components/GoalsTab';
 import { useLanguage } from './translations';
 
 
@@ -79,7 +84,8 @@ import {
   Monitor,
   Bell,
   Hammer,
-  Sparkles
+  Sparkles,
+  Target
 } from 'lucide-react';
 
 const TIPS = [
@@ -95,7 +101,7 @@ export default function App() {
   const { t, tText } = useLanguage();
 
   // Navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth' | 'notifications' | 'eco_ia'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'bills' | 'investments' | 'config' | 'auth' | 'notifications' | 'eco_ia' | 'goals'>('dashboard');
 
   // Core States
   const [profiles, setProfiles] = useState<AppProfile[]>([]);
@@ -106,6 +112,7 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [monthlyBills, setMonthlyBills] = useState<MonthlyBill[]>([]);
   const [investments, setInvestments] = useState<Investment[]>([]);
+  const [financialGoals, setFinancialGoals] = useState<FinancialGoal[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
 
@@ -137,6 +144,24 @@ export default function App() {
     document.body.classList.remove('dark');
     document.documentElement.classList.remove('dark');
     localStorage.setItem('finantra_theme', 'light');
+
+    // Desativa o clique com o botão direito na página inteira
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    // Desativa o atalho de arrastar imagens
+    const handleDragStart = (event: DragEvent) => {
+      event.preventDefault();
+    };
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('dragstart', handleDragStart);
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('dragstart', handleDragStart);
+    };
   }, []);
 
   // Computed Current Profile
@@ -229,11 +254,12 @@ export default function App() {
     }
   }, [loggedInUser]);
 
-  // 1.5. Dynamic User Data Isolation Switcher
+  // 1.5. Dynamic User Data Isolation Switcher & Cloud Config Restore for Multi-device Consistency
   useEffect(() => {
     if (loggedInUser) {
       const safeKey = loggedInUser.toLowerCase().replace(/[^a-zA-Z0-9]/g, '_');
       
+      // A. Load from LocalStorage first for instant rendering
       const storedProfilesStr = localStorage.getItem(`fin_profiles_${safeKey}`);
       let loadedProfiles: AppProfile[] = [];
       if (storedProfilesStr) {
@@ -263,6 +289,28 @@ export default function App() {
           categoryLimits: {}
         });
       }
+
+      // B. Asynchronously fetch from Cloud to restore and sync profiles/prefs on new devices or cache clearing
+      loadCloudUserProfileAndPrefs(loggedInUser).then((cloudConfig) => {
+        if (cloudConfig) {
+          let updatedProfiles = loadedProfiles;
+          if (cloudConfig.cloudProfiles && cloudConfig.cloudProfiles.length > 0) {
+            updatedProfiles = cloudConfig.cloudProfiles;
+            setProfiles(updatedProfiles);
+            localStorage.setItem(`fin_profiles_${safeKey}`, JSON.stringify(updatedProfiles));
+          }
+          if (cloudConfig.cloudPrefs) {
+            setPreferences(cloudConfig.cloudPrefs);
+            localStorage.setItem(`fin_preferences_${safeKey}`, JSON.stringify(cloudConfig.cloudPrefs));
+          }
+          
+          const activeId = localStorage.getItem(`fin_active_id_${safeKey}`) || updatedProfiles[0]?.id || `p-${safeKey}`;
+          setCurrentProfileId(activeId);
+          localStorage.setItem(`fin_active_id_${safeKey}`, activeId);
+        }
+      }).catch((err) => {
+        console.warn('Failed to asynchronously load cloud user profile and preferences:', err);
+      });
     }
   }, [loggedInUser]);
 
@@ -275,39 +323,46 @@ export default function App() {
     const localT = localStorage.getItem(`fin_trans_${profId}`);
     const localB = localStorage.getItem(`fin_bills_${profId}`);
     const localI = localStorage.getItem(`fin_invests_${profId}`);
+    const localG = localStorage.getItem(`fin_goals_${profId}`);
 
     let transList: Transaction[] = localT ? JSON.parse(localT) : [];
     let billsList: MonthlyBill[] = localB ? JSON.parse(localB) : [];
     let investsList: Investment[] = localI ? JSON.parse(localI) : [];
+    let goalsList: FinancialGoal[] = localG ? JSON.parse(localG) : [];
 
     // Filter out previous seed/mock data elements containing hyphens in ID (e.g. t-1, b-1, i-1)
     transList = transList.filter(t => t && t.id && !t.id.includes('-'));
     billsList = billsList.filter(b => b && b.id && !b.id.includes('-'));
     investsList = investsList.filter(i => i && i.id && !i.id.includes('-'));
+    goalsList = goalsList.filter(g => g && g.id && !g.id.includes('-'));
 
     // If completely new local profile with no data, seed with realistic mock values
-    const freshProfileVisit = !localT && !localB && !localI;
+    const freshProfileVisit = !localT && !localB && !localI && !localG;
     if (freshProfileVisit) {
       // If we have a loggedInUser, start completely empty! Mostre apenas o que o usuário colocou
       if (loggedInUser && loggedInUser !== 'convidado@finantra.com') {
         transList = [];
         billsList = [];
         investsList = [];
+        goalsList = [];
       } else {
         transList = SEED_TRANSACTIONS(profId);
         billsList = SEED_BILLS(profId);
         investsList = SEED_INVESTMENTS(profId);
+        goalsList = [];
       }
       
       // Save newly seeded values locally
       localStorage.setItem(`fin_trans_${profId}`, JSON.stringify(transList));
       localStorage.setItem(`fin_bills_${profId}`, JSON.stringify(billsList));
       localStorage.setItem(`fin_invests_${profId}`, JSON.stringify(investsList));
+      localStorage.setItem(`fin_goals_${profId}`, JSON.stringify(goalsList));
     }
 
     setTransactions(transList);
     setMonthlyBills(billsList);
     setInvestments(investsList);
+    setFinancialGoals(goalsList);
 
     // Load local trash items
     const localTrash = localStorage.getItem(`fin_trash_${profId}`);
@@ -365,12 +420,17 @@ export default function App() {
         const remoteT = await fetchTransactions(profId);
         const remoteB = await fetchMonthlyBills(profId);
         const remoteI = await fetchInvestments(profId);
+        const remoteG = await fetchFinancialGoals(profId);
 
         if (remoteT !== null && remoteB !== null && remoteI !== null) {
           // Success! Sync our state
           setTransactions(remoteT);
           setMonthlyBills(remoteB);
           setInvestments(remoteI);
+          if (remoteG !== null) {
+            setFinancialGoals(remoteG);
+            localStorage.setItem(`fin_goals_${profId}`, JSON.stringify(remoteG));
+          }
 
           // Overwrite local copy with up-to-date cloud copy
           localStorage.setItem(`fin_trans_${profId}`, JSON.stringify(remoteT));
@@ -406,8 +466,10 @@ export default function App() {
             let updatedNotifs = [...notifList];
             // Remove previous maintenance alerts
             updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
-            // Filter out expired ones
-            const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+            // Filter out expired ones and previously deleted ones
+            const deletedKey = `fin_deleted_maint_${profId}`;
+            const deletedList = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+            const activeMaint = remoteMaint.filter(n => (!n.expiryTime || Date.now() < n.expiryTime) && !deletedList.includes(n.id));
             updatedNotifs = [...activeMaint, ...updatedNotifs];
             
             setNotifications(updatedNotifs);
@@ -448,7 +510,9 @@ export default function App() {
               let updatedNotifs = [...prev];
               // Remove previous maintenance alerts
               updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
-              const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+              const deletedKey = `fin_deleted_maint_${currentProfileId}`;
+              const deletedList = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+              const activeMaint = remoteMaint.filter(n => (!n.expiryTime || Date.now() < n.expiryTime) && !deletedList.includes(n.id));
               updatedNotifs = [...activeMaint, ...updatedNotifs];
               
               localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updatedNotifs));
@@ -470,6 +534,11 @@ export default function App() {
     const userEmail = email.toLowerCase();
     const safeKey = userEmail.replace(/[^a-zA-Z0-9]/g, '_');
     const userProfileId = `p-${safeKey}`;
+
+    // Force write the active user keys synchronously to prevent any potential race conditions with async fetchers
+    localStorage.setItem('fin_current_user_email', userEmail);
+    localStorage.setItem('finantra_current_user_email', userEmail);
+    localStorage.setItem('finantra_saved_user_email', userEmail);
 
     // 1. Check and Migrate Guest data (gains, expenses, bills, investments) to the newly authenticated account
     const guestProfileId = localStorage.getItem('fin_active_id') || 'p-default';
@@ -613,8 +682,58 @@ export default function App() {
     // Finally set user logged in, which completes the state update flow
     setLoggedInUser(userEmail);
     setActiveTab('dashboard');
+
+    // Force dynamic reload of profile data directly from Supabase / cloud for instant restoration
+    await loadProfileData(storedActiveId, true);
+
     setIsSyncing(false);
   };
+
+  // Robust, unified handleLogout to clear private state and restore public defaults
+  const handleLogout = useCallback(() => {
+    // Clear Session/Credentials from localStorage
+    localStorage.removeItem('finantra_keep_logged_in');
+    localStorage.removeItem('finantra_saved_user_email');
+    localStorage.removeItem('fin_current_user_email');
+    localStorage.removeItem('finantra_current_user_email');
+    
+    setLoggedInUser(null);
+    setLandingMode('presentation');
+    setActiveTab('dashboard');
+    
+    // Switch profile ID and properties back to guest/public defaults
+    const storedActiveId = localStorage.getItem('fin_active_id') || 'p-default';
+    setCurrentProfileId(storedActiveId);
+
+    const storedProfilesStr = localStorage.getItem('fin_profiles');
+    let loadedProfiles: AppProfile[] = [];
+    if (storedProfilesStr) {
+      try { loadedProfiles = JSON.parse(storedProfilesStr); } catch { loadedProfiles = []; }
+    }
+    if (loadedProfiles.length === 0) {
+      loadedProfiles = [
+        { id: 'p-default', name: 'Minha Carteira', isCloudSync: true }
+      ];
+      localStorage.setItem('fin_profiles', JSON.stringify(loadedProfiles));
+    }
+    setProfiles(loadedProfiles);
+
+    const storedPrefs = localStorage.getItem('fin_preferences');
+    if (storedPrefs) {
+      try { setPreferences(JSON.parse(storedPrefs)); } catch {}
+    } else {
+      setPreferences({
+        currency: 'BRL',
+        monthlyIncomeGoal: 5000,
+        monthlyExpenseLimit: 3000,
+        savingsGoal: 1000,
+        categoryLimits: {}
+      });
+    }
+
+    // Refresh guest/public data locally and asynchronously
+    loadProfileData(storedActiveId, true);
+  }, [loadProfileData]);
 
   // Toggle cloud sync parameter on the active profile
   const handleToggleSync = (isSyncEnabled: boolean) => {
@@ -685,6 +804,15 @@ export default function App() {
   };
 
   const handleDeleteNotification = (id: string) => {
+    if (id.startsWith('supabase_maint_') && currentProfileId) {
+      const deletedKey = `fin_deleted_maint_${currentProfileId}`;
+      const deletedList = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+      if (!deletedList.includes(id)) {
+        deletedList.push(id);
+        localStorage.setItem(deletedKey, JSON.stringify(deletedList));
+      }
+    }
+
     setNotifications(prev => {
       const updated = prev.filter(n => n.id !== id);
       localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
@@ -694,6 +822,7 @@ export default function App() {
 
   const handleClearAllReadNotifications = () => {
     setNotifications(prev => {
+      // Allow clearing all read notifications, and if any maintenance is read, they can be cleared too unless locked
       const updated = prev.filter(n => !n.isRead || n.isMaintenance);
       localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updated));
       return updated;
@@ -710,7 +839,9 @@ export default function App() {
           let updatedNotifs = [...prev];
           // Remove previous maintenance alerts
           updatedNotifs = updatedNotifs.filter(n => !n.isMaintenance);
-          const activeMaint = remoteMaint.filter(n => !n.expiryTime || Date.now() < n.expiryTime);
+          const deletedKey = `fin_deleted_maint_${currentProfileId}`;
+          const deletedList = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+          const activeMaint = remoteMaint.filter(n => (!n.expiryTime || Date.now() < n.expiryTime) && !deletedList.includes(n.id));
           updatedNotifs = [...activeMaint, ...updatedNotifs];
           count = activeMaint.length;
           localStorage.setItem(`fin_notifications_${currentProfileId}`, JSON.stringify(updatedNotifs));
@@ -918,6 +1049,55 @@ export default function App() {
 
     if (currentProfile.isCloudSync) {
       await deleteInvestmentFromDb(id);
+    }
+  };
+
+  // C.2 Financial Goals
+  const handleAddGoal = async (newG: Omit<FinancialGoal, 'id' | 'profileId'>) => {
+    const goalObj: FinancialGoal = {
+      ...newG,
+      id: `g_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      profileId: currentProfileId
+    };
+
+    const updated = [...financialGoals, goalObj];
+    setFinancialGoals(updated);
+    localStorage.setItem(`fin_goals_${currentProfileId}`, JSON.stringify(updated));
+
+    addSystemNotification(
+      'earning_added',
+      'Meta Adicionada',
+      `A meta "${goalObj.name}" com valor alvo de ${formatCurrency(goalObj.targetAmount, preferences.currency)} foi registrada com sucesso.`
+    );
+
+    if (currentProfile.isCloudSync) {
+      await upsertFinancialGoal(goalObj);
+    }
+  };
+
+  const handleUpdateGoalAmount = async (id: string, newAmount: number) => {
+    const updated = financialGoals.map(g => {
+      if (g.id === id) {
+        const mod = { ...g, currentAmount: newAmount };
+        if (currentProfile.isCloudSync) {
+          upsertFinancialGoal(mod);
+        }
+        return mod;
+      }
+      return g;
+    });
+
+    setFinancialGoals(updated);
+    localStorage.setItem(`fin_goals_${currentProfileId}`, JSON.stringify(updated));
+  };
+
+  const handleDeleteGoal = async (id: string) => {
+    const updated = financialGoals.filter(g => g.id !== id);
+    setFinancialGoals(updated);
+    localStorage.setItem(`fin_goals_${currentProfileId}`, JSON.stringify(updated));
+
+    if (currentProfile.isCloudSync) {
+      await deleteFinancialGoalFromDb(id);
     }
   };
 
@@ -1154,9 +1334,7 @@ export default function App() {
                   onLogin={(email) => {
                     handleLoginSuccess(email);
                   }}
-                  onLogout={() => {
-                    setLoggedInUser(null);
-                  }}
+                  onLogout={handleLogout}
                 />
               </div>
             )}
@@ -1284,6 +1462,7 @@ export default function App() {
               { id: 'transactions', name: t.navTransactions, icon: ArrowRightLeft },
               { id: 'bills', name: t.navBills, icon: CalendarCheck2 },
               { id: 'investments', name: t.navInvestments, icon: TrendingUp },
+              { id: 'goals', name: tText('Metas'), icon: Target },
               { id: 'eco_ia', name: 'ECO IA Finantra', icon: Sparkles },
               { id: 'notifications', name: tText('Notificações'), icon: Bell },
               { id: 'auth', name: loggedInUser ? t.navAuth : (t.language === 'pt-BR' ? 'Acesso & Login' : (t.language === 'es' ? 'Acceso e Inicio' : 'Access & Login')), icon: LogIn },
@@ -1418,6 +1597,24 @@ export default function App() {
             </div>
           )}
 
+          {/* Goals Tab */}
+          {activeTab === 'goals' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-950 tracking-tight">{tText("Metas Financeiras")}</h2>
+                <p className="text-xs text-gray-500">{tText("Estabeleça metas financeiras claras, registre suas economias direcionadas a cada objetivo e acompanhe seu progresso.")}</p>
+              </div>
+
+              <GoalsTab
+                goals={financialGoals}
+                onAddGoal={handleAddGoal}
+                onUpdateGoalAmount={handleUpdateGoalAmount}
+                onDeleteGoal={handleDeleteGoal}
+                currency={preferences.currency}
+              />
+            </div>
+          )}
+
           {/* ECO IA FINANTRA Tab */}
           {activeTab === 'eco_ia' && (
             <div className="space-y-6 animate-fadeIn">
@@ -1430,9 +1627,15 @@ export default function App() {
                 onAddTransaction={handleAddTransaction}
                 onAddBill={handleAddBill}
                 onAddInvestment={handleAddInvestment}
+                onAddGoal={handleAddGoal}
                 transactions={transactions}
                 monthlyBills={monthlyBills}
+                investments={investments}
+                financialGoals={financialGoals}
                 onDeleteTransaction={handleDeleteTransaction}
+                onDeleteBill={handleDeleteBill}
+                onDeleteInvestment={handleDeleteInvestment}
+                onDeleteGoal={handleDeleteGoal}
                 onToggleBillStatus={handleToggleBillStatus}
                 currency={preferences.currency}
               />
@@ -1469,13 +1672,9 @@ export default function App() {
               <AuthTab
                 loggedInUser={loggedInUser}
                 onLogin={(email) => {
-                  setLoggedInUser(email);
-                  // Dynamic feedback alert
-                  setActiveTab('dashboard');
+                  handleLoginSuccess(email);
                 }}
-                onLogout={() => {
-                  setLoggedInUser(null);
-                }}
+                onLogout={handleLogout}
               />
             </div>
           )}

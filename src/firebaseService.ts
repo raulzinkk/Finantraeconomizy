@@ -10,7 +10,7 @@ import {
   query, 
   where 
 } from 'firebase/firestore';
-import { Transaction, MonthlyBill, Investment, AppProfile, UserPreferences, TrashItem } from './types';
+import { Transaction, MonthlyBill, Investment, AppProfile, UserPreferences, TrashItem, FinancialGoal } from './types';
 import { getDoc } from 'firebase/firestore';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 import { supabase } from './supabaseClient';
@@ -412,7 +412,7 @@ export async function fetchTransactions(profileId: string): Promise<Transaction[
       });
     });
   } catch (err) {
-    console.error('Failed to fetch transactions from Firestore:', err);
+    handleFirestoreError(err, OperationType.GET, colPath);
   }
 
   // 2. Try loading from Supabase
@@ -579,7 +579,7 @@ export async function fetchMonthlyBills(profileId: string): Promise<MonthlyBill[
       });
     });
   } catch (err) {
-    console.error('Failed to fetch bills from Firestore:', err);
+    handleFirestoreError(err, OperationType.GET, colPath);
   }
 
   // 2. Try loading from Supabase
@@ -743,7 +743,7 @@ export async function fetchInvestments(profileId: string): Promise<Investment[] 
       });
     });
   } catch (err) {
-    console.error('Failed to fetch investments from Firestore:', err);
+    handleFirestoreError(err, OperationType.GET, colPath);
   }
 
   // 2. Try loading from Supabase
@@ -868,6 +868,164 @@ export async function deleteInvestmentFromDb(id: string): Promise<boolean> {
 
   // Fallback/dual-delete in Firestore
   const colPath = 'investments';
+  try {
+    await deleteDoc(doc(db, colPath, id));
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, colPath);
+    return false;
+  }
+}
+
+// -------------------------------------------------------------
+// FINANCIAL GOALS (METAS)
+// -------------------------------------------------------------
+
+export async function fetchFinancialGoals(profileId: string): Promise<FinancialGoal[] | null> {
+  const userId = getActiveUserId();
+  if (!userId) return null;
+
+  const goalsMap = new Map<string, FinancialGoal>();
+
+  // 1. Try loading from Firestore
+  const colPath = 'financial_goals';
+  try {
+    const q = query(
+      collection(db, colPath),
+      where('userId', '==', userId),
+      where('profileId', '==', profileId)
+    );
+    const querySnapshot = await getDocs(q);
+    querySnapshot.forEach((document) => {
+      const data = document.data();
+      goalsMap.set(data.id, {
+        id: data.id,
+        name: data.name,
+        targetAmount: Number(data.targetAmount),
+        currentAmount: Number(data.currentAmount),
+        deadline: data.deadline || '',
+        category: data.category || '',
+        profileId: data.profileId
+      });
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, colPath);
+  }
+
+  // 2. Try loading from Supabase
+  try {
+    const { data, error } = await supabase
+      .from('financial_goals')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('profile_id', profileId);
+    
+    if (!error && data) {
+      data.forEach(item => {
+        goalsMap.set(item.id, {
+          id: item.id,
+          name: item.name,
+          targetAmount: Number(item.target_amount || item.targetAmount || 0),
+          currentAmount: Number(item.current_amount || item.currentAmount || 0),
+          deadline: item.deadline || '',
+          category: item.category || '',
+          profileId: item.profile_id || item.profileId
+        });
+      });
+    } else if (error) {
+      console.warn('Supabase fetchFinancialGoals error:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase fetchFinancialGoals exception:', err);
+  }
+
+  const mergedList = Array.from(goalsMap.values());
+
+  // 3. Proactive background backfill to Supabase for items only present in Firestore
+  if (mergedList.length > 0) {
+    mergedList.forEach(async (g) => {
+      try {
+        await supabase.from('financial_goals').upsert({
+          id: g.id,
+          name: g.name || '',
+          target_amount: Number(g.targetAmount) || 0,
+          current_amount: Number(g.currentAmount) || 0,
+          deadline: g.deadline || '',
+          category: g.category || '',
+          profile_id: g.profileId,
+          user_id: userId
+        });
+      } catch (e) {
+        // ignore background sync errors
+      }
+    });
+  }
+
+  return mergedList.length > 0 ? mergedList : [];
+}
+
+export async function upsertFinancialGoal(goal: FinancialGoal, customUserId?: string): Promise<boolean> {
+  const userId = customUserId || getActiveUserId();
+  if (!userId) return false;
+
+  let supabaseSuccess = false;
+  try {
+    const { error } = await supabase.from('financial_goals').upsert({
+      id: goal.id,
+      name: goal.name || '',
+      target_amount: Number(goal.targetAmount) || 0,
+      current_amount: Number(goal.currentAmount) || 0,
+      deadline: goal.deadline || '',
+      category: goal.category || '',
+      profile_id: goal.profileId,
+      user_id: userId
+    });
+    if (!error) {
+      supabaseSuccess = true;
+    } else {
+      console.warn('Supabase upsertFinancialGoal error:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase upsertFinancialGoal exception:', err);
+  }
+
+  // Dual-write/fallback to Firestore
+  const colPath = 'financial_goals';
+  try {
+    const payload = {
+      id: goal.id,
+      name: goal.name || '',
+      targetAmount: Number(goal.targetAmount) || 0,
+      currentAmount: Number(goal.currentAmount) || 0,
+      deadline: goal.deadline || '',
+      category: goal.category || '',
+      profileId: goal.profileId,
+      userId: userId
+    };
+
+    await setDoc(doc(db, colPath, goal.id), payload);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, colPath);
+    return false;
+  }
+}
+
+export async function deleteFinancialGoalFromDb(id: string): Promise<boolean> {
+  let supabaseSuccess = false;
+  try {
+    const { error } = await supabase.from('financial_goals').delete().eq('id', id);
+    if (!error) {
+      supabaseSuccess = true;
+    } else {
+      console.warn('Supabase deleteFinancialGoal error:', error);
+    }
+  } catch (err) {
+    console.warn('Supabase deleteFinancialGoal exception:', err);
+  }
+
+  // Fallback/dual-delete in Firestore
+  const colPath = 'financial_goals';
   try {
     await deleteDoc(doc(db, colPath, id));
     return true;
@@ -1392,7 +1550,7 @@ export async function fetchTrashItems(profileId: string): Promise<TrashItem[] | 
       });
     });
   } catch (err) {
-    console.error('Failed to fetch trash items from Firestore:', err);
+    handleFirestoreError(err, OperationType.GET, 'trash_transactions');
   }
 
   // 2. Try loading from Supabase if table exists
